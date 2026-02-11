@@ -35,11 +35,13 @@ export interface PaymentsResponse {
 }
 
 export interface RevenueSummary {
-    totalRevenue: number;
-    currency: string;
-    series: {
+    total: number;
+    outstanding: number;
+    byCourse: {
+        courseId: string;
+        title: string;
         amount: number;
-        date: string;
+        count: number;
     }[];
 }
 
@@ -59,6 +61,6 @@ export const financeApi = {
     },
 
     getRevenueSummary: async () => {
-        return apiClient.get<RevenueSummary>('/instructor/payments/summary'); // Updated URL to match routes
+        return apiClient.get<RevenueSummary>('/admin/revenue/summary');
     }
 };

@@ -47,36 +47,63 @@ export default function DashboardPage() {
 
   // Data Fetching
   useEffect(() => {
+    let isMounted = true;
+    const abortController = new AbortController();
+
     if (user && isAdminPanelRole(user.role)) {
       const fetchData = async () => {
         try {
-          setLoading(true);
-          const [paymentsRes, studentsRes, revenueRes] = await Promise.all([
-            financeApi.getPayments({ limit: 20 }), // Limit reduced significantly, only needed for Activity Feed
-            instructorApi.getStudents({ limit: 5 }), // Only need recent 5 for dashboard
-            financeApi.getRevenueSummary() // New endpoint
+          if (isMounted) setLoading(true);
+          
+          const results = await Promise.allSettled([
+            financeApi.getPayments({ limit: 20 }), 
+            instructorApi.getStudents({ limit: 5 }), 
+            financeApi.getRevenueSummary()
           ]);
+
+          if (!isMounted) return;
+
+          // Helper to get fulfilled value or default
+          const getResult = <T,>(result: PromiseSettledResult<T>, fallback: T): T => {
+             return result.status === 'fulfilled' ? result.value : fallback;
+          };
+
+          const paymentsRes = getResult(results[0], { payments: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } });
+          const studentsRes = getResult(results[1], { data: [], meta: { total: 0, page: 1, limit: 5, totalPages: 0 } });
+          const revenueRes = getResult(results[2], { total: 0, outstanding: 0, byCourse: [] });
+
+          // Log failures for debugging
+          results.forEach((res, idx) => {
+              if (res.status === 'rejected') {
+                  console.warn(`Dashboard API ${idx} failed:`, res.reason);
+              }
+          });
 
           // Extract payments safely based on financeApi response structure
           const paymentsList = (paymentsRes as any).payments || (Array.isArray(paymentsRes) ? paymentsRes : []);
           
           // Extract students from new pagination structure
-          const studentList = handlePaginatedResponse(studentsRes); // Helper logic inline or just check
+          const studentList = handlePaginatedResponse(studentsRes);
 
           setData({
             payments: paymentsList,
             students: studentList,
-            totalRevenue: revenueRes.totalRevenue, // Use server-side total
-            revenueSeries: revenueRes.series // Use server-side series
+            totalRevenue: revenueRes.total,
+            revenueSeries: [] // Backend does not provide time-series data yet
           });
         } catch (error) {
           console.error('Dashboard data fetch failed:', error);
         } finally {
-          setLoading(false);
+          if (isMounted) setLoading(false);
         }
       };
       fetchData();
     }
+    
+    return () => {
+        isMounted = false;
+        abortController.abort();
+    };
   }, [user]);
 
   if (isAuthLoading || loading) {
