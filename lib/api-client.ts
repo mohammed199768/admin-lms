@@ -371,6 +371,16 @@ class ApiClient {
     return this.get<Blob>(url, { ...config, responseType: 'blob' });
   }
 }
+declare global {
+  // eslint-disable-next-line no-var
+  var __adminApiClient: ApiClient | undefined;
+}
 
-export const apiClient = new ApiClient();
-export default apiClient;
+const client = globalThis.__adminApiClient ?? new ApiClient();
+
+if (process.env.NODE_ENV !== 'production') {
+  globalThis.__adminApiClient = client;
+}
+
+export const apiClient = client;
+export default client;
