@@ -48,14 +48,7 @@
       "theme_system": "System Preference",
       "toggle_theme": "Toggle theme"
     },
-    "dashboard": {
-      "commandCenter": "Command Center",
-      "welcome": "Welcome back",
-      "goodMorning": "Good Morning",
-      "goodAfternoon": "Good Afternoon",
-      "goodEvening": "Good Evening",
-      "totalRevenue": "Total Revenue"
-    },
+
     "studentsPage": {
       "title": "Students",
       "subtitle": "Manage your student base.",
@@ -249,7 +242,9 @@
       "engagement": "completion",
       "noTopCourse": "No purchases yet",
       "noNewStudent": "No students registered yet",
-      "noEngagement": "No engagement data yet"
+      "noEngagement": "No engagement data yet",
+      "noData": "No data available",
+      "noRevenue14Days": "No revenue in last 14 days"
     },
     "purchases": {
       "title": "Payment Follow-up",

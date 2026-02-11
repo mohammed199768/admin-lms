@@ -43,6 +43,11 @@ export function RevenueChart({ series }: RevenueChartProps) {
         return filledData;
     }, [series]);
 
+    const hasRevenue = useMemo(() => {
+        if (!series || series.length === 0) return false;
+        return series.some(s => s.amount > 0);
+    }, [series]);
+
     return (
         <Card className="col-span-1 lg:col-span-2 overflow-hidden border-slate-200/50 dark:border-white/5 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md rounded-[2rem] shadow-xl">
             <CardHeader className="pb-2">
@@ -58,6 +63,10 @@ export function RevenueChart({ series }: RevenueChartProps) {
                     {(!series || series.length === 0) ? (
                         <div className="text-slate-400 dark:text-slate-500 font-medium text-sm">
                             {t('noData', { defaultMessage: 'No time-series data available' })}
+                        </div>
+                    ) : !hasRevenue ? (
+                         <div className="text-slate-400 dark:text-slate-500 font-medium text-sm">
+                            {t('noRevenue14Days', { defaultMessage: 'No revenue in last 14 days' })}
                         </div>
                     ) : (
                         <ResponsiveContainer width="100%" height="100%">

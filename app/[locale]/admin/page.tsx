@@ -58,7 +58,8 @@ export default function DashboardPage() {
           const results = await Promise.allSettled([
             financeApi.getPayments({ limit: 20 }), 
             instructorApi.getStudents({ limit: 5 }), 
-            financeApi.getRevenueSummary()
+            financeApi.getRevenueSummary(),
+            financeApi.getRevenueTimeseries(14) // New: Timeseries
           ]);
 
           if (!isMounted) return;
@@ -71,6 +72,7 @@ export default function DashboardPage() {
           const paymentsRes = getResult(results[0], { payments: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } });
           const studentsRes = getResult(results[1], { data: [], meta: { total: 0, page: 1, limit: 5, totalPages: 0 } });
           const revenueRes = getResult(results[2], { total: 0, outstanding: 0, byCourse: [] });
+          const timeseriesRes = getResult(results[3], { series: [] });
 
           // Log failures for debugging
           results.forEach((res, idx) => {
@@ -89,7 +91,7 @@ export default function DashboardPage() {
             payments: paymentsList,
             students: studentList,
             totalRevenue: revenueRes.total,
-            revenueSeries: [] // Backend does not provide time-series data yet
+            revenueSeries: timeseriesRes.series // Use real time-series data
           });
         } catch (error) {
           console.error('Dashboard data fetch failed:', error);

@@ -62,5 +62,9 @@ export const financeApi = {
 
     getRevenueSummary: async () => {
         return apiClient.get<RevenueSummary>('/admin/revenue/summary');
+    },
+
+    getRevenueTimeseries: async (days: number = 14) => {
+        return apiClient.get<{ series: { date: string; amount: number }[] }>('/admin/revenue/timeseries', { params: { days } });
     }
 };
