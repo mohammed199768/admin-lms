@@ -233,28 +233,86 @@ export default function PartEditorPage() {
     const [isImporting, setIsImporting] = useState(false);
     const [importStatus, setImportStatus] = useState('');
 
+    // Helper: check if file is a video
+    const isVideoFile = (file: File) => file.type.startsWith('video/');
+
+    // Helper: skip system/hidden files
+    const SKIP_FILES = ['desktop.ini', '.ds_store', 'thumbs.db', '.thumbs', '.gitkeep', '.gitignore'];
+    const isSystemFile = (file: File) => {
+        const name = file.name.toLowerCase();
+        return SKIP_FILES.includes(name) || name.startsWith('.');
+    };
+
+    // Helper: upload a video to a specific part (for folder import)
+    const uploadVideoToTarget = (targetPartId: string, file: File): Promise<void> => {
+        return new Promise(async (resolve, reject) => {
+            try {
+                const data = await instructorApi.initVideoUpload(file.name);
+                const { videoId, authorizationSignature, expirationTime, libraryId } = data;
+                const { Upload } = (await import('tus-js-client'));
+
+                const upload = new Upload(file, {
+                    endpoint: process.env.NEXT_PUBLIC_BUNNY_TUS_ENDPOINT || 'https://video.bunnycdn.com/tusupload',
+                    retryDelays: [0, 3000, 5000],
+                    headers: {
+                        AuthorizationSignature: authorizationSignature,
+                        AuthorizationExpire: expirationTime.toString(),
+                        VideoId: videoId,
+                        LibraryId: libraryId.toString(),
+                    },
+                    metadata: { filetype: file.type, title: file.name },
+                    onError: (error) => reject(error),
+                    onProgress: (bytesUploaded, bytesTotal) => {
+                        setUploadProgress(Math.round((bytesUploaded / bytesTotal) * 100));
+                    },
+                    onSuccess: async () => {
+                        try {
+                            const freshPart = await instructorApi.getPart(targetPartId);
+                            const nextOrder = (freshPart?.assets?.length || 0) + 1;
+                            await instructorApi.createAsset(targetPartId, {
+                                title: file.name, type: 'VIDEO', bunnyVideoId: videoId,
+                                order: nextOrder, isPreview: false
+                            });
+                            resolve();
+                        } catch (e) { reject(e); }
+                    },
+                });
+                upload.start();
+            } catch (error) { reject(error); }
+        });
+    };
+
+    // Upload a file to a target part (auto-detects video vs document)
+    const uploadFileToTarget = async (targetPartId: string, file: File) => {
+        if (isVideoFile(file)) {
+            await uploadVideoToTarget(targetPartId, file);
+        } else {
+            await instructorApi.uploadPdf(targetPartId, file, isSecure);
+        }
+    };
+
     const handleFolderImport = async (files: FileList | null) => {
         if (!files || files.length === 0) return;
 
         // Parse folder structure: group files by their immediate parent folder
-        const folderMap = new Map<string, File[]>(); // folderName -> files
-        const rootFiles: File[] = []; // files at root level (no subfolder)
+        const folderMap = new Map<string, File[]>();
+        const rootFiles: File[] = [];
 
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
+            // Skip system/hidden files
+            if (isSystemFile(file)) continue;
+
             const relativePath = (file as any).webkitRelativePath || file.name;
             const parts = relativePath.split('/');
             
-            // parts[0] = selected folder name, parts[1] = subfolder or file
             if (parts.length >= 3) {
-                // File is inside a subfolder: parts[1] is the subfolder name
                 const subfolderName = parts[1];
                 if (!folderMap.has(subfolderName)) {
                     folderMap.set(subfolderName, []);
                 }
                 folderMap.get(subfolderName)!.push(file);
             } else if (parts.length === 2) {
-                // File is at root of selected folder
                 rootFiles.push(file);
             }
         }
@@ -274,9 +332,10 @@ export default function PartEditorPage() {
             // 1. Upload root-level files directly to current part
             for (let i = 0; i < rootFiles.length; i++) {
                 const file = rootFiles[i];
-                setImportStatus(`📂 Root files: ${i + 1}/${totalRootFiles} - ${file.name}`);
+                const fileType = isVideoFile(file) ? '🎬' : '📄';
+                setImportStatus(`📂 Root: ${i + 1}/${totalRootFiles} ${fileType} ${file.name}`);
                 try {
-                    await instructorApi.uploadPdf(partId, file, isSecure);
+                    await uploadFileToTarget(partId, file);
                     toast.success(`✅ ${file.name}`);
                 } catch (e) {
                     toast.error(`❌ ${file.name}`);
@@ -290,7 +349,6 @@ export default function PartEditorPage() {
                 processedFolders++;
                 setImportStatus(`📁 ${processedFolders}/${totalFolders}: Creating "${folderName}"...`);
 
-                // Create sub-part
                 let subPartId: string;
                 try {
                     const nextOrder = ((part?.subParts?.length || 0) + processedFolders);
@@ -299,15 +357,15 @@ export default function PartEditorPage() {
                     toast.success(`📁 Sub-part: ${folderName}`);
                 } catch (e) {
                     toast.error(`❌ Failed to create sub-part: ${folderName}`);
-                    continue; // skip this folder's files
+                    continue;
                 }
 
-                // Upload files to the sub-part
                 for (let i = 0; i < folderFiles.length; i++) {
                     const file = folderFiles[i];
-                    setImportStatus(`📁 ${processedFolders}/${totalFolders}: "${folderName}" - File ${i + 1}/${folderFiles.length}: ${file.name}`);
+                    const fileType = isVideoFile(file) ? '🎬' : '📄';
+                    setImportStatus(`📁 ${processedFolders}/${totalFolders}: "${folderName}" - ${fileType} ${i + 1}/${folderFiles.length}: ${file.name}`);
                     try {
-                        await instructorApi.uploadPdf(subPartId, file, isSecure);
+                        await uploadFileToTarget(subPartId, file);
                         toast.success(`  ✅ ${file.name}`);
                     } catch (e) {
                         toast.error(`  ❌ ${file.name}`);
