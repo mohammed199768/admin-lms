@@ -131,7 +131,7 @@ export default function PartEditorPage() {
         setCurrentVideoIndex(0);
         setIsUploading(true);
         isProcessingQueue.current = true;
-        toast.info(`📋 ${fileArray.length} video(s) queued for upload`);
+        toast.info(`📋 ${fileArray.length} file(s) queued for upload`);
     };
 
     // Process queue sequentially
@@ -150,9 +150,10 @@ export default function PartEditorPage() {
         }
 
         const file = videoQueue[currentVideoIndex];
-        uploadSingleVideo(file)
+        const uploader = isVideoFile(file) ? uploadSingleVideo(file) : uploadFileToTarget(partId, file);
+        uploader
             .then(() => setCurrentVideoIndex(prev => prev + 1))
-            .catch(() => setCurrentVideoIndex(prev => prev + 1)); // skip failed, continue
+            .catch(() => setCurrentVideoIndex(prev => prev + 1));
     }, [currentVideoIndex, videoQueue]);
 
     const [textContent, setTextContent] = useState('');
@@ -471,16 +472,16 @@ export default function PartEditorPage() {
                             <div className="relative">
                                 <input
                                     type="file"
-                                    accept="video/*"
+                                    accept="video/*,image/*"
                                     multiple
                                     className="hidden"
                                     id="video-upload-main"
-                                    aria-label="Upload Videos"
+                                    aria-label="Upload Videos & Images"
                                     onChange={(e) => { handleSelectVideos(e.target.files); e.target.value = ''; }}
                                     disabled={isUploading}
                                 />
                                 <Button className="w-full" variant="outline" onClick={() => document.getElementById('video-upload-main')?.click()} disabled={isUploading}>
-                                    <Video className="mr-2 h-4 w-4" /> {isUploading ? `Uploading ${currentVideoIndex + 1}/${videoQueue.length}...` : `${t('uploadVideo')} (multi)`}
+                                    <Video className="mr-2 h-4 w-4" /> {isUploading ? `Uploading ${currentVideoIndex + 1}/${videoQueue.length}...` : 'Upload Video & Images (multi)'}
                                 </Button>
                             </div>
                         </div>
