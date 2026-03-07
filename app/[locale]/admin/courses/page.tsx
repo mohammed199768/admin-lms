@@ -224,8 +224,13 @@ export default function CoursesPage() {
                         upload.start();
                     });
                 } else {
-                    // Document/Image → direct upload
-                    await instructorApi.uploadPdf(partId, file, false);
+                    // Document/Image → direct upload with Unicode title
+                    const title = file.name.replace(/\.[^/.]+$/, '');
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    formData.append('isSecure', 'false');
+                    formData.append('title', new Blob([title], { type: 'text/plain;charset=utf-8' }), title);
+                    await instructorApi.uploadPartFile(partId, formData);
                 }
             } catch {
                 errors.push(file.name);

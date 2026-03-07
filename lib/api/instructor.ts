@@ -357,6 +357,13 @@ export const instructorApi = {
     },
 
     /**
+     * Upload a file with pre-built FormData (supports Unicode titles)
+     */
+    uploadPartFile: async (partId: string, formData: FormData): Promise<{ storageKey: string }> => {
+        return apiClient.post(`/lessons/${partId}/document`, formData);
+    },
+
+    /**
      * PERFORMANCE: Chunked upload for very large files or unstable networks
      * Splits file into 5MB chunks for reliable uploads
      */
