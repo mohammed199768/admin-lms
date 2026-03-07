@@ -176,6 +176,8 @@ export default function CoursesPage() {
         return (node.children || []).reduce((sum, c) => sum + countFiles(c), 0);
     };
 
+    const isVideoFile = (file: File) => /\.(mp4|mov|avi|mkv|webm)$/i.test(file.name);
+
     const handleImport = async () => {
         if (!folderStructure || !importUniId) return;
         setImportStep('importing');
@@ -183,6 +185,54 @@ export default function CoursesPage() {
         const totalFiles = countFiles(folderStructure);
         let current = 0;
         setImportProgress({ current: 0, total: totalFiles, currentFile: 'Creating course...' });
+
+        const uploadFile = async (file: File, partId: string) => {
+            setImportProgress(p => ({ ...p, currentFile: file.name }));
+            try {
+                if (isVideoFile(file)) {
+                    // Video → TUS via Bunny CDN
+                    const data = await instructorApi.initVideoUpload(file.name);
+                    const { videoId, authorizationSignature, expirationTime, libraryId } = data;
+                    const { Upload } = (await import('tus-js-client'));
+                    await new Promise<void>((resolve, reject) => {
+                        const upload = new Upload(file, {
+                            endpoint: process.env.NEXT_PUBLIC_BUNNY_TUS_ENDPOINT || 'https://video.bunnycdn.com/tusupload',
+                            retryDelays: [0, 3000, 5000],
+                            headers: {
+                                AuthorizationSignature: authorizationSignature,
+                                AuthorizationExpire: String(expirationTime),
+                                VideoId: videoId,
+                                LibraryId: String(libraryId),
+                            },
+                            metadata: { filetype: file.type, title: file.name },
+                            onSuccess: async () => {
+                                try {
+                                    const partData = await instructorApi.getPart(partId);
+                                    const nextOrder = (partData?.assets?.length || 0) + 1;
+                                    await instructorApi.createAsset(partId, {
+                                        title: file.name.replace(/\.[^/.]+$/, ''),
+                                        type: 'VIDEO',
+                                        bunnyVideoId: videoId,
+                                        order: nextOrder,
+                                        isPreview: false,
+                                    });
+                                    resolve();
+                                } catch (e) { reject(e); }
+                            },
+                            onError: reject,
+                        });
+                        upload.start();
+                    });
+                } else {
+                    // Document/Image → direct upload
+                    await instructorApi.uploadPdf(partId, file, false);
+                }
+            } catch {
+                errors.push(file.name);
+            }
+            current++;
+            setImportProgress(p => ({ ...p, current }));
+        };
 
         try {
             const course = await instructorApi.createCourse({ title: folderStructure.name, universityId: importUniId });
@@ -196,9 +246,7 @@ export default function CoursesPage() {
                 const part = await instructorApi.createPart(lec.id, { title: folderStructure.name, order: 1 });
                 for (const f of rootFiles) {
                     if (!f.file) continue;
-                    setImportProgress({ current, total: totalFiles, currentFile: f.name });
-                    try { await instructorApi.uploadPdf(part.id, f.file, false); } catch { errors.push(f.name); }
-                    current++;
+                    await uploadFile(f.file, part.id);
                 }
             }
 
@@ -215,9 +263,7 @@ export default function CoursesPage() {
                     const autoPart = await instructorApi.createPart(lecture.id, { title: lec.name, order: 1 });
                     for (const f of directFiles) {
                         if (!f.file) continue;
-                        setImportProgress({ current, total: totalFiles, currentFile: f.name });
-                        try { await instructorApi.uploadPdf(autoPart.id, f.file, false); } catch { errors.push(f.name); }
-                        current++;
+                        await uploadFile(f.file, autoPart.id);
                     }
                 }
 
@@ -228,9 +274,7 @@ export default function CoursesPage() {
                     const partFiles = sf.children?.filter(c => c.type === 'file') || [];
                     for (const f of partFiles) {
                         if (!f.file) continue;
-                        setImportProgress({ current, total: totalFiles, currentFile: f.name });
-                        try { await instructorApi.uploadPdf(part.id, f.file, false); } catch { errors.push(f.name); }
-                        current++;
+                        await uploadFile(f.file, part.id);
                     }
                 }
             }
