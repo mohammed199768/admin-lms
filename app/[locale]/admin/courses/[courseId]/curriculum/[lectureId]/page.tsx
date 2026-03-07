@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { instructorApi, type Part, type PartAsset } from '@/lib/api/instructor';
 import { toast } from 'sonner';
-import { Loader2, ChevronLeft, Video, FileText, Trash, Plus, ArrowRight } from 'lucide-react';
+import { Loader2, ChevronLeft, Video, FileText, Trash, Plus, ArrowRight, FolderUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -229,6 +229,103 @@ export default function PartEditorPage() {
         }
     };
 
+    // Folder import state
+    const [isImporting, setIsImporting] = useState(false);
+    const [importStatus, setImportStatus] = useState('');
+
+    const handleFolderImport = async (files: FileList | null) => {
+        if (!files || files.length === 0) return;
+
+        // Parse folder structure: group files by their immediate parent folder
+        const folderMap = new Map<string, File[]>(); // folderName -> files
+        const rootFiles: File[] = []; // files at root level (no subfolder)
+
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const relativePath = (file as any).webkitRelativePath || file.name;
+            const parts = relativePath.split('/');
+            
+            // parts[0] = selected folder name, parts[1] = subfolder or file
+            if (parts.length >= 3) {
+                // File is inside a subfolder: parts[1] is the subfolder name
+                const subfolderName = parts[1];
+                if (!folderMap.has(subfolderName)) {
+                    folderMap.set(subfolderName, []);
+                }
+                folderMap.get(subfolderName)!.push(file);
+            } else if (parts.length === 2) {
+                // File is at root of selected folder
+                rootFiles.push(file);
+            }
+        }
+
+        const totalFolders = folderMap.size;
+        const totalRootFiles = rootFiles.length;
+        if (totalFolders === 0 && totalRootFiles === 0) {
+            toast.error('No files found in folder');
+            return;
+        }
+
+        setIsImporting(true);
+        setIsUploading(true);
+        let processedFolders = 0;
+
+        try {
+            // 1. Upload root-level files directly to current part
+            for (let i = 0; i < rootFiles.length; i++) {
+                const file = rootFiles[i];
+                setImportStatus(`📂 Root files: ${i + 1}/${totalRootFiles} - ${file.name}`);
+                try {
+                    await instructorApi.uploadPdf(partId, file, isSecure);
+                    toast.success(`✅ ${file.name}`);
+                } catch (e) {
+                    toast.error(`❌ ${file.name}`);
+                }
+            }
+
+            // 2. For each subfolder: create sub-part, then upload its files
+            const sortedFolders = Array.from(folderMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+            
+            for (const [folderName, folderFiles] of sortedFolders) {
+                processedFolders++;
+                setImportStatus(`📁 ${processedFolders}/${totalFolders}: Creating "${folderName}"...`);
+
+                // Create sub-part
+                let subPartId: string;
+                try {
+                    const nextOrder = ((part?.subParts?.length || 0) + processedFolders);
+                    const result = await instructorApi.createSubPart(partId, { title: folderName, order: nextOrder });
+                    subPartId = result.id;
+                    toast.success(`📁 Sub-part: ${folderName}`);
+                } catch (e) {
+                    toast.error(`❌ Failed to create sub-part: ${folderName}`);
+                    continue; // skip this folder's files
+                }
+
+                // Upload files to the sub-part
+                for (let i = 0; i < folderFiles.length; i++) {
+                    const file = folderFiles[i];
+                    setImportStatus(`📁 ${processedFolders}/${totalFolders}: "${folderName}" - File ${i + 1}/${folderFiles.length}: ${file.name}`);
+                    try {
+                        await instructorApi.uploadPdf(subPartId, file, isSecure);
+                        toast.success(`  ✅ ${file.name}`);
+                    } catch (e) {
+                        toast.error(`  ❌ ${file.name}`);
+                    }
+                }
+            }
+
+            toast.success(`🎉 Import complete! ${totalFolders} sub-parts created`);
+            fetchPart();
+        } catch (error) {
+            toast.error('Import failed');
+        } finally {
+            setIsImporting(false);
+            setIsUploading(false);
+            setImportStatus('');
+        }
+    };
+
     const handleUploadTextAsPdf = async () => {
         if (!textContent.trim()) return;
         const blob = new Blob([textContent], { type: 'text/plain' });
@@ -408,10 +505,36 @@ export default function PartEditorPage() {
                         <CardTitle>Sub-Parts ({part.subParts?.length || 0})</CardTitle>
                         <CardDescription>أجزاء فرعية - اضغط على أي جزء لإضافة محتوى له</CardDescription>
                     </div>
-                    <Button variant="outline" size="sm" onClick={handleCreateSubPart}>
-                        <Plus className="mr-2 h-4 w-4" /> Add Sub-Part
-                    </Button>
+                    <div className="flex gap-2">
+                        <input
+                            type="file"
+                            className="hidden"
+                            id="folder-import"
+                            {...{ webkitdirectory: '', directory: '' } as any}
+                            onChange={(e) => { handleFolderImport(e.target.files); e.target.value = ''; }}
+                            disabled={isUploading || isImporting}
+                        />
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => document.getElementById('folder-import')?.click()}
+                            disabled={isUploading || isImporting}
+                        >
+                            <FolderUp className="mr-2 h-4 w-4" /> Import Folder
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={handleCreateSubPart} disabled={isImporting}>
+                            <Plus className="mr-2 h-4 w-4" /> Add Sub-Part
+                        </Button>
+                    </div>
                 </CardHeader>
+                {isImporting && (
+                    <div className="px-6 pb-2">
+                        <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
+                            <div className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-1">⏳ Importing...</div>
+                            <div className="text-xs text-blue-600 dark:text-blue-400">{importStatus}</div>
+                        </div>
+                    </div>
+                )}
                 <CardContent>
                     <div className="space-y-2">
                         {part.subParts?.map((sub: any) => (
