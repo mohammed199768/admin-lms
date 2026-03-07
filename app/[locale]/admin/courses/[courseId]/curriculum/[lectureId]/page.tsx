@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { instructorApi, type Part, type PartAsset } from '@/lib/api/instructor';
 import { toast } from 'sonner';
-import { Loader2, ChevronLeft, Video, FileText, Trash } from 'lucide-react';
+import { Loader2, ChevronLeft, Video, FileText, Trash, Plus, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -162,6 +162,19 @@ export default function PartEditorPage() {
         }
     };
 
+    const handleCreateSubPart = async () => {
+        const subTitle = prompt('Sub-part title:');
+        if (!subTitle) return;
+        try {
+            const nextOrder = (part?.subParts?.length || 0) + 1;
+            await instructorApi.createSubPart(partId, { title: subTitle, order: nextOrder });
+            toast.success('Sub-part created');
+            fetchPart();
+        } catch (error) {
+            toast.error('Failed to create sub-part');
+        }
+    };
+
     const togglePreview = async (asset: any) => {
         try {
             const newStatus = !asset.isPreview;
@@ -290,6 +303,46 @@ export default function PartEditorPage() {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Sub-Parts Section */}
+            <Card>
+                <CardHeader className="flex flex-row items-center justify-between">
+                    <div>
+                        <CardTitle>Sub-Parts ({part.subParts?.length || 0})</CardTitle>
+                        <CardDescription>أجزاء فرعية - اضغط على أي جزء لإضافة محتوى له</CardDescription>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={handleCreateSubPart}>
+                        <Plus className="mr-2 h-4 w-4" /> Add Sub-Part
+                    </Button>
+                </CardHeader>
+                <CardContent>
+                    <div className="space-y-2">
+                        {part.subParts?.map((sub: any) => (
+                            <div
+                                key={sub.id}
+                                className="flex items-center justify-between p-3 border rounded-lg bg-card hover:bg-muted/50 cursor-pointer transition-colors group"
+                                onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${sub.id}`)}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-muted rounded">
+                                        <FileText className="h-4 w-4 text-muted-foreground" />
+                                    </div>
+                                    <div>
+                                        <div className="font-medium group-hover:text-primary transition-colors">{sub.title}</div>
+                                        <div className="text-xs text-muted-foreground">
+                                            {sub.assets?.length || 0} assets
+                                        </div>
+                                    </div>
+                                </div>
+                                <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                            </div>
+                        ))}
+                        {(!part.subParts || part.subParts.length === 0) && (
+                            <p className="text-muted-foreground text-center py-4">No sub-parts yet. Click &quot;Add Sub-Part&quot; to create one.</p>
+                        )}
+                    </div>
+                </CardContent>
+            </Card>
 
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
