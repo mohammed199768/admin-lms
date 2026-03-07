@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { instructorApi, type Part, type PartAsset } from '@/lib/api/instructor';
 import { toast } from 'sonner';
@@ -33,6 +33,12 @@ export default function PartEditorPage() {
     const [uploadProgress, setUploadProgress] = useState<number>(0);
     const [isSecure, setIsSecure] = useState(true);
 
+    // Video upload queue
+    const [videoQueue, setVideoQueue] = useState<File[]>([]);
+    const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
+    const [currentVideoName, setCurrentVideoName] = useState('');
+    const isProcessingQueue = useRef(false);
+
     const fetchPart = useCallback(async () => {
         try {
             setIsLoading(true);
@@ -59,69 +65,95 @@ export default function PartEditorPage() {
         }
     };
 
-    const handleUploadVideo = async (file: File) => {
-        if (!file) return;
-        try {
-            setIsUploading(true);
-            setUploadProgress(0);
+    // Upload a single video (returns a promise that resolves when done)
+    const uploadSingleVideo = (file: File): Promise<void> => {
+        return new Promise(async (resolve, reject) => {
+            try {
+                setCurrentVideoName(file.name);
+                setUploadProgress(0);
 
-            // 1. Init Upload
-            const data = await instructorApi.initVideoUpload(file.name);
-            const { videoId, authorizationSignature, expirationTime, libraryId } = data;
+                const data = await instructorApi.initVideoUpload(file.name);
+                const { videoId, authorizationSignature, expirationTime, libraryId } = data;
+                const { Upload } = (await import('tus-js-client'));
 
-            // 2. Upload with Tus
-            // Dynamically import Tus to avoid SSR issues
-            const { Upload } = (await import('tus-js-client'));
-
-            const upload = new Upload(file, {
-                endpoint: process.env.NEXT_PUBLIC_BUNNY_TUS_ENDPOINT || 'https://video.bunnycdn.com/tusupload',
-                retryDelays: [0, 3000, 5000],
-                headers: {
-                    AuthorizationSignature: authorizationSignature,
-                    AuthorizationExpire: expirationTime.toString(),
-                    VideoId: videoId,
-                    LibraryId: libraryId.toString(),
-                },
-                metadata: {
-                    filetype: file.type,
-                    title: file.name,
-                },
-                onError: (error) => {
-                    toast.error('Video upload failed: ' + error.message);
-                    setIsUploading(false);
-                },
-                onProgress: (bytesUploaded, bytesTotal) => {
-                    const percentage = (bytesUploaded / bytesTotal) * 100;
-                    setUploadProgress(Math.round(percentage));
-                },
-                onSuccess: async () => {
-                    // 3. Create Asset
-                    try {
-                        const nextOrder = (part?.assets?.length || 0) + 1;
-                        await instructorApi.createAsset(partId, {
-                            title: file.name,
-                            type: 'VIDEO',
-                            bunnyVideoId: videoId,
-                            order: nextOrder,
-                            isPreview: false
-                        });
-                        toast.success('Video uploaded successfully');
-                        fetchPart();
-                    } catch (e) {
-                        toast.error('Failed to link video to part');
-                    } finally {
-                        setIsUploading(false);
-                    }
-                },
-            });
-
-            upload.start();
-
-        } catch (error) {
-            toast.error('Failed to initialize video upload');
-            setIsUploading(false);
-        }
+                const upload = new Upload(file, {
+                    endpoint: process.env.NEXT_PUBLIC_BUNNY_TUS_ENDPOINT || 'https://video.bunnycdn.com/tusupload',
+                    retryDelays: [0, 3000, 5000],
+                    headers: {
+                        AuthorizationSignature: authorizationSignature,
+                        AuthorizationExpire: expirationTime.toString(),
+                        VideoId: videoId,
+                        LibraryId: libraryId.toString(),
+                    },
+                    metadata: {
+                        filetype: file.type,
+                        title: file.name,
+                    },
+                    onError: (error) => {
+                        toast.error(`❌ ${file.name}: ${error.message}`);
+                        reject(error);
+                    },
+                    onProgress: (bytesUploaded, bytesTotal) => {
+                        setUploadProgress(Math.round((bytesUploaded / bytesTotal) * 100));
+                    },
+                    onSuccess: async () => {
+                        try {
+                            const freshPart = await instructorApi.getPart(partId);
+                            const nextOrder = (freshPart?.assets?.length || 0) + 1;
+                            await instructorApi.createAsset(partId, {
+                                title: file.name,
+                                type: 'VIDEO',
+                                bunnyVideoId: videoId,
+                                order: nextOrder,
+                                isPreview: false
+                            });
+                            toast.success(`✅ ${file.name}`);
+                            resolve();
+                        } catch (e) {
+                            toast.error(`Failed to link: ${file.name}`);
+                            reject(e);
+                        }
+                    },
+                });
+                upload.start();
+            } catch (error) {
+                toast.error(`Failed to init: ${file.name}`);
+                reject(error);
+            }
+        });
     };
+
+    // Handle multi-file selection → queue
+    const handleSelectVideos = (files: FileList | null) => {
+        if (!files || files.length === 0) return;
+        const fileArray = Array.from(files);
+        setVideoQueue(fileArray);
+        setCurrentVideoIndex(0);
+        setIsUploading(true);
+        isProcessingQueue.current = true;
+        toast.info(`📋 ${fileArray.length} video(s) queued for upload`);
+    };
+
+    // Process queue sequentially
+    useEffect(() => {
+        if (!isProcessingQueue.current || videoQueue.length === 0) return;
+        if (currentVideoIndex >= videoQueue.length) {
+            // All done
+            setIsUploading(false);
+            setVideoQueue([]);
+            setCurrentVideoIndex(0);
+            setCurrentVideoName('');
+            isProcessingQueue.current = false;
+            fetchPart();
+            toast.success(`🎉 All ${videoQueue.length} videos uploaded!`);
+            return;
+        }
+
+        const file = videoQueue[currentVideoIndex];
+        uploadSingleVideo(file)
+            .then(() => setCurrentVideoIndex(prev => prev + 1))
+            .catch(() => setCurrentVideoIndex(prev => prev + 1)); // skip failed, continue
+    }, [currentVideoIndex, videoQueue]);
 
     const [textContent, setTextContent] = useState('');
 
@@ -232,14 +264,15 @@ export default function PartEditorPage() {
                                 <input
                                     type="file"
                                     accept="video/*"
+                                    multiple
                                     className="hidden"
                                     id="video-upload-main"
-                                    aria-label="Upload Video"
-                                    onChange={(e) => handleUploadVideo(e.target.files?.[0]!)}
+                                    aria-label="Upload Videos"
+                                    onChange={(e) => { handleSelectVideos(e.target.files); e.target.value = ''; }}
                                     disabled={isUploading}
                                 />
                                 <Button className="w-full" variant="outline" onClick={() => document.getElementById('video-upload-main')?.click()} disabled={isUploading}>
-                                    <Video className="mr-2 h-4 w-4" /> {t('uploadVideo')}
+                                    <Video className="mr-2 h-4 w-4" /> {isUploading ? `Uploading ${currentVideoIndex + 1}/${videoQueue.length}...` : `${t('uploadVideo')} (multi)`}
                                 </Button>
                             </div>
                         </div>
@@ -293,8 +326,13 @@ export default function PartEditorPage() {
                         </div>
                         {isUploading && (
                             <div className="space-y-2">
+                                {videoQueue.length > 0 && (
+                                    <div className="text-xs font-medium text-primary">
+                                        📹 {currentVideoIndex + 1} / {videoQueue.length}: {currentVideoName}
+                                    </div>
+                                )}
                                 <div className="text-xs text-muted-foreground flex justify-between">
-                                    <span>Uploading...</span>
+                                    <span>{currentVideoName || 'Uploading...'}</span>
                                     <span>{uploadProgress}%</span>
                                 </div>
                                 <Progress value={Math.min(100, Math.max(0, uploadProgress))} />
