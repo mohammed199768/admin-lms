@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, BookOpen, MoreVertical, Loader2 } from 'lucide-react';
+import { Plus, Search, BookOpen, MoreVertical, Loader2, FolderOpen, ChevronRight, FileIcon, FolderIcon, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -31,12 +31,16 @@ import { instructorApi, type Course } from '@/lib/api/instructor';
 import { catalogApi } from '@/lib/api/catalog';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Progress } from '@/components/ui/progress';
 
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { formatPrice } from '@/lib/utils';
 import { CatalogCardSkeleton } from '@/components/admin/catalog/CatalogSkeleton';
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+type FolderNode = { name: string; type: 'folder' | 'file'; children?: FolderNode[]; file?: File; mimeType?: string };
 
 export default function CoursesPage() {
     const t = useTranslations('admin.courses');
@@ -54,6 +58,14 @@ export default function CoursesPage() {
     // Creation Form State
     const [selectedUniId, setSelectedUniId] = useState('');
     const [newCourseTitle, setNewCourseTitle] = useState('');
+
+    // Import Folder State
+    const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+    const [importUniId, setImportUniId] = useState('');
+    const [folderStructure, setFolderStructure] = useState<FolderNode | null>(null);
+    const [importStep, setImportStep] = useState<'select' | 'preview' | 'importing' | 'done'>('select');
+    const [importProgress, setImportProgress] = useState({ current: 0, total: 0, currentFile: '' });
+    const [importErrors, setImportErrors] = useState<string[]>([]);
 
     // Handle URL Params for pre-filling
     useEffect(() => {
@@ -99,8 +111,7 @@ export default function CoursesPage() {
 
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault();
-        // V2: Subject is optional if University is selected (or generally optional)
-        if (!newCourseTitle || !selectedUniId) return; 
+        if (!newCourseTitle || !selectedUniId) return;
         createMutation.mutate();
     };
 
@@ -110,6 +121,139 @@ export default function CoursesPage() {
 
     const filteredCourses = courses.filter(c =>
         c.title.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    // ====== IMPORT FOLDER LOGIC ======
+    const IGNORED_FILES = ['desktop.ini', '.ds_store', 'thumbs.db', '.gitkeep', '.gitignore'];
+
+    const buildFolderStructure = (files: FileList): FolderNode => {
+        const root: FolderNode = { name: '', type: 'folder', children: [] };
+        Array.from(files).forEach(file => {
+            if (IGNORED_FILES.includes(file.name.toLowerCase())) return;
+            if (file.name.startsWith('.')) return;
+            const parts = (file as any).webkitRelativePath?.split('/') || [file.name];
+            if (parts.length < 2) return;
+            root.name = parts[0];
+
+            if (parts.length === 2) {
+                root.children!.push({ name: parts[1], type: 'file', file, mimeType: file.type });
+                return;
+            }
+
+            const lectureName = parts[1];
+            let lectureNode = root.children!.find(c => c.name === lectureName && c.type === 'folder');
+            if (!lectureNode) { lectureNode = { name: lectureName, type: 'folder', children: [] }; root.children!.push(lectureNode); }
+
+            if (parts.length === 3) {
+                lectureNode.children!.push({ name: parts[2], type: 'file', file, mimeType: file.type });
+            } else if (parts.length >= 4) {
+                const partName = parts[2];
+                let partNode = lectureNode.children!.find(c => c.name === partName && c.type === 'folder');
+                if (!partNode) { partNode = { name: partName, type: 'folder', children: [] }; lectureNode.children!.push(partNode); }
+                partNode.children!.push({ name: parts[parts.length - 1], type: 'file', file, mimeType: file.type });
+            }
+        });
+        // Sort folders alphabetically
+        const sortChildren = (node: FolderNode) => {
+            if (node.children) {
+                node.children.sort((a, b) => { if (a.type !== b.type) return a.type === 'folder' ? -1 : 1; return a.name.localeCompare(b.name); });
+                node.children.forEach(sortChildren);
+            }
+        };
+        sortChildren(root);
+        return root;
+    };
+
+    const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files || e.target.files.length === 0) return;
+        const structure = buildFolderStructure(e.target.files);
+        setFolderStructure(structure);
+        setImportStep('preview');
+    };
+
+    const countFiles = (node: FolderNode): number => {
+        if (node.type === 'file') return 1;
+        return (node.children || []).reduce((sum, c) => sum + countFiles(c), 0);
+    };
+
+    const handleImport = async () => {
+        if (!folderStructure || !importUniId) return;
+        setImportStep('importing');
+        const errors: string[] = [];
+        const totalFiles = countFiles(folderStructure);
+        let current = 0;
+        setImportProgress({ current: 0, total: totalFiles, currentFile: 'Creating course...' });
+
+        try {
+            const course = await instructorApi.createCourse({ title: folderStructure.name, universityId: importUniId });
+
+            const lectures = folderStructure.children?.filter(c => c.type === 'folder') || [];
+            const rootFiles = folderStructure.children?.filter(c => c.type === 'file') || [];
+
+            // Root files → default lecture + part
+            if (rootFiles.length > 0) {
+                const lec = await instructorApi.createLecture(course.id, { title: folderStructure.name, order: 0 });
+                const part = await instructorApi.createPart(lec.id, { title: folderStructure.name, order: 1 });
+                for (const f of rootFiles) {
+                    if (!f.file) continue;
+                    setImportProgress({ current, total: totalFiles, currentFile: f.name });
+                    try { await instructorApi.uploadPdf(part.id, f.file, false); } catch { errors.push(f.name); }
+                    current++;
+                }
+            }
+
+            // Each subfolder → Lecture
+            for (let li = 0; li < lectures.length; li++) {
+                const lec = lectures[li];
+                const lecture = await instructorApi.createLecture(course.id, { title: lec.name, order: li + 1 });
+
+                const directFiles = lec.children?.filter(c => c.type === 'file') || [];
+                const subFolders = lec.children?.filter(c => c.type === 'folder') || [];
+
+                // Direct files in lecture → auto Part
+                if (directFiles.length > 0) {
+                    const autoPart = await instructorApi.createPart(lecture.id, { title: lec.name, order: 1 });
+                    for (const f of directFiles) {
+                        if (!f.file) continue;
+                        setImportProgress({ current, total: totalFiles, currentFile: f.name });
+                        try { await instructorApi.uploadPdf(autoPart.id, f.file, false); } catch { errors.push(f.name); }
+                        current++;
+                    }
+                }
+
+                // Subfolders → Parts
+                for (let pi = 0; pi < subFolders.length; pi++) {
+                    const sf = subFolders[pi];
+                    const part = await instructorApi.createPart(lecture.id, { title: sf.name, order: pi + (directFiles.length > 0 ? 2 : 1) });
+                    const partFiles = sf.children?.filter(c => c.type === 'file') || [];
+                    for (const f of partFiles) {
+                        if (!f.file) continue;
+                        setImportProgress({ current, total: totalFiles, currentFile: f.name });
+                        try { await instructorApi.uploadPdf(part.id, f.file, false); } catch { errors.push(f.name); }
+                        current++;
+                    }
+                }
+            }
+
+            setImportProgress({ current: totalFiles, total: totalFiles, currentFile: 'Done!' });
+            setImportErrors(errors);
+            setImportStep('done');
+            queryClient.invalidateQueries({ queryKey: ['my-courses'] });
+        } catch {
+            toast.error('Import failed');
+            setImportStep('preview');
+        }
+    };
+
+    const renderTree = (node: FolderNode, depth = 0): React.ReactNode => (
+        <div key={node.name + depth} style={{ paddingInlineStart: depth * 16 }}>
+            <div className="flex items-center gap-2 py-1 text-sm">
+                {node.type === 'folder' ? <FolderIcon className="h-4 w-4 text-amber-500" /> : <FileIcon className="h-4 w-4 text-slate-400" />}
+                <span className={node.type === 'folder' ? 'font-bold' : 'text-muted-foreground'}>{node.name}</span>
+                {node.type === 'folder' && node.children && <span className="text-xs text-muted-foreground">({countFiles(node)} files)</span>}
+            </div>
+            {node.children?.map((child, i) => renderTree(child, depth + 1))}
+        </div>
     );
 
     return (
@@ -196,6 +340,105 @@ export default function CoursesPage() {
                             </div>
                         </DialogContent>
                     </Dialog>
+
+                    {/* Import Folder Button */}
+                    <Button
+                        variant="outline"
+                        className="rounded-xl h-11 px-5 font-bold border-dashed border-2"
+                        onClick={() => { setImportStep('select'); setFolderStructure(null); setImportUniId(''); setImportErrors([]); setIsImportDialogOpen(true); }}
+                    >
+                        <FolderOpen className="me-2 h-5 w-5" /> Import Folder
+                    </Button>
+
+                    {/* Import Dialog */}
+                    <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+                        <DialogContent className="sm:max-w-[550px] rounded-[2rem] border-none shadow-2xl p-0 overflow-hidden bg-white dark:bg-slate-950">
+                            <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-8 text-white relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl -mr-16 -mt-16"></div>
+                                <DialogTitle className="text-3xl font-black relative z-10">📁 Import Course from Folder</DialogTitle>
+                                <DialogDescription className="text-white/90 mt-2 font-bold text-base relative z-10">
+                                    هيكل المجلد يصير كورس كامل تلقائياً
+                                </DialogDescription>
+                            </div>
+
+                            {importStep === 'select' && (
+                                <div className="p-8 space-y-5">
+                                    <div className="space-y-2">
+                                        <Label className="text-slate-900 dark:text-slate-200 font-bold text-xs uppercase tracking-widest">University</Label>
+                                        <Select onValueChange={setImportUniId} value={importUniId}>
+                                            <SelectTrigger className="rounded-xl h-12 border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5"><SelectValue placeholder="Select university" /></SelectTrigger>
+                                            <SelectContent className="rounded-xl border-none shadow-2xl">
+                                                {universities.map(u => <SelectItem key={u.id} value={u.id} className="rounded-lg">{u.name}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <label className={`flex flex-col items-center justify-center w-full h-36 border-2 border-dashed rounded-2xl cursor-pointer hover:bg-muted/30 transition-all ${!importUniId ? 'opacity-40 pointer-events-none' : 'hover:border-primary'}`}>
+                                        <FolderOpen className="h-10 w-10 text-primary mb-2" />
+                                        <span className="font-black text-lg">Click to select folder</span>
+                                        <span className="text-xs text-muted-foreground mt-1">المجلد الرئيسي = اسم الكورس</span>
+                                        <input type="file" className="hidden" {...{ webkitdirectory: '', directory: '' } as any} onChange={handleFolderSelect} disabled={!importUniId} />
+                                    </label>
+                                    <div className="text-xs text-muted-foreground bg-muted/30 p-3 rounded-xl space-y-1">
+                                        <p className="font-bold">📂 الهيكل المتوقع:</p>
+                                        <p>📁 CourseName/ → كورس</p>
+                                        <p>&nbsp;&nbsp;📁 Lecture1/ → محاضرة</p>
+                                        <p>&nbsp;&nbsp;&nbsp;&nbsp;📁 Part1/ → جزء</p>
+                                        <p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;📄 file.pdf → ملف</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {importStep === 'preview' && folderStructure && (
+                                <div className="p-6 space-y-4">
+                                    <div className="flex items-center gap-3">
+                                        <FolderIcon className="h-6 w-6 text-amber-500" />
+                                        <div>
+                                            <p className="font-black text-lg">{folderStructure.name}</p>
+                                            <p className="text-xs text-muted-foreground">
+                                                {folderStructure.children?.filter(c => c.type === 'folder').length || 0} lectures · {countFiles(folderStructure)} files
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <ScrollArea className="h-[300px] border rounded-xl p-3">
+                                        {folderStructure.children?.map((child, i) => renderTree(child, 0))}
+                                    </ScrollArea>
+                                    <div className="flex gap-3">
+                                        <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setImportStep('select')}>Back</Button>
+                                        <Button className="flex-1 rounded-xl font-black" onClick={handleImport}>
+                                            <ChevronRight className="mr-2 h-4 w-4" /> Start Import
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {importStep === 'importing' && (
+                                <div className="p-8 space-y-5">
+                                    <div className="text-center">
+                                        <Loader2 className="h-10 w-10 text-primary animate-spin mx-auto mb-3" />
+                                        <p className="font-black text-lg">Importing...</p>
+                                        <p className="text-sm text-muted-foreground mt-1 truncate max-w-[400px] mx-auto">{importProgress.currentFile}</p>
+                                    </div>
+                                    <Progress value={importProgress.total > 0 ? (importProgress.current / importProgress.total) * 100 : 0} />
+                                    <p className="text-center text-sm font-bold text-muted-foreground">{importProgress.current} / {importProgress.total}</p>
+                                </div>
+                            )}
+
+                            {importStep === 'done' && (
+                                <div className="p-8 text-center space-y-4">
+                                    <CheckCircle2 className="h-14 w-14 text-emerald-500 mx-auto" />
+                                    <p className="font-black text-2xl">Import Complete! 🎉</p>
+                                    <p className="text-muted-foreground">{importProgress.total} files uploaded</p>
+                                    {importErrors.length > 0 && (
+                                        <div className="text-left bg-destructive/10 rounded-xl p-3 max-h-32 overflow-auto">
+                                            <p className="font-bold text-xs text-destructive mb-1"><AlertCircle className="inline h-3 w-3 mr-1" />{importErrors.length} errors:</p>
+                                            {importErrors.map((e, i) => <p key={i} className="text-xs text-destructive">{e}</p>)}
+                                        </div>
+                                    )}
+                                    <Button onClick={() => setIsImportDialogOpen(false)} className="w-full rounded-xl font-black h-12">Done</Button>
+                                </div>
+                            )}
+                        </DialogContent>
+                    </Dialog>
                 </div>
             </div>
 
@@ -274,4 +517,3 @@ export default function CoursesPage() {
         </div>
     );
 }
-
