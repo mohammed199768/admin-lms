@@ -80,6 +80,20 @@ export default function CurriculumPage() {
         }
     };
 
+    const handleQuickAddSubPart = async (parentPartId: string, lectureId: string) => {
+        const title = prompt("Sub-part title:");
+        if (!title) return;
+        try {
+            const parent = lectures.find(l => l.id === lectureId)?.parts?.find(p => p.id === parentPartId);
+            const nextOrder = (parent?.subParts?.length || 0) + 1;
+            await instructorApi.createSubPart(parentPartId, { title, order: nextOrder });
+            toast.success('Sub-part created');
+            fetchContent();
+        } catch (error) {
+            toast.error('Failed to create sub-part');
+        }
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -126,27 +140,57 @@ export default function CurriculumPage() {
                                     const isPdf = part.assets?.some(a => a.type === 'PDF' || a.type === 'PPTX');
                                     
                                     return (
-                                        <div
-                                            key={part.id}
-                                            className="flex items-center justify-between p-3 rounded-md bg-muted/40 hover:bg-muted ml-6 transition-colors cursor-pointer group"
-                                            onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${part.id}`)}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className={`p-2 bg-background rounded-full border`}>
-                                                    {isVideo ? <Video className="h-4 w-4 text-purple-500" /> :
-                                                        isPdf ? <FileText className="h-4 w-4 text-blue-500" /> :
-                                                            <FileText className="h-4 w-4 text-muted-foreground" />}
-                                                </div>
-                                                <div>
-                                                    <div className="font-medium group-hover:text-primary transition-colors">{part.title}</div>
-                                                    <div className="text-xs text-muted-foreground flex gap-2">
-                                                        {part.assets?.length || 0} {t('assets')}
+                                        <div key={part.id}>
+                                            <div
+                                                className="flex items-center justify-between p-3 rounded-md bg-muted/40 hover:bg-muted ml-6 transition-colors cursor-pointer group"
+                                                onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${part.id}`)}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`p-2 bg-background rounded-full border`}>
+                                                        {isVideo ? <Video className="h-4 w-4 text-purple-500" /> :
+                                                            isPdf ? <FileText className="h-4 w-4 text-blue-500" /> :
+                                                                <FileText className="h-4 w-4 text-muted-foreground" />}
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-medium group-hover:text-primary transition-colors">{part.title}</div>
+                                                        <div className="text-xs text-muted-foreground flex gap-2">
+                                                            {part.assets?.length || 0} {t('assets')}
+                                                        </div>
                                                     </div>
                                                 </div>
+                                                <div className="flex items-center gap-1">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleQuickAddSubPart(part.id, lecture.id);
+                                                        }}
+                                                    >
+                                                        <Plus className="h-3 w-3 mr-1" /> Sub-part
+                                                    </Button>
+                                                    <Button variant="ghost" size="sm">
+                                                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                                                    </Button>
+                                                </div>
                                             </div>
-                                            <Button variant="ghost" size="sm">
-                                                <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                                            </Button>
+                                            {part.subParts?.map(sub => (
+                                                <div
+                                                    key={sub.id}
+                                                    className="flex items-center justify-between p-2 rounded-md bg-muted/20 hover:bg-muted ml-12 mt-1 cursor-pointer"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        router.push(`/admin/courses/${courseId}/curriculum/${sub.id}`);
+                                                    }}
+                                                >
+                                                    <div className="flex items-center gap-2">
+                                                        <FileText className="h-3 w-3 text-muted-foreground" />
+                                                        <span className="text-sm">{sub.title}</span>
+                                                    </div>
+                                                    <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                                                </div>
+                                            ))}
                                         </div>
                                     );
                                 })}

@@ -91,6 +91,7 @@ export interface Part {
     title: string;
     order: number;
     assets: PartAsset[];
+    subParts?: Part[];
 }
 
 export interface Lecture {
@@ -234,6 +235,11 @@ export const instructorApi = {
     },
 
     getCourse: async (id: string): Promise<Course & CourseContent> => {
+        type BackendPart = Omit<Part, 'subParts'> & {
+            subParts?: BackendPart[];
+            subLessons?: BackendPart[];
+        };
+
         const data = await apiClient.get<{
             id: string;
             title: string;
@@ -248,16 +254,21 @@ export const instructorApi = {
                 id: string;
                 title: string;
                 order: number;
-                lessons: Part[];
+                lessons: BackendPart[];
             }>;
         }>(`/instructor/courses/${id}`);
+
+        const normalizePart = (part: BackendPart): Part => ({
+            ...part,
+            subParts: (part.subParts || part.subLessons || []).map(normalizePart)
+        });
         
         // Map backend response (sections -> lectures, lessons -> parts)
         return {
             ...data,
             lectures: data.sections?.map((s) => ({
                 ...s,
-                parts: s.lessons
+                parts: s.lessons.map(normalizePart)
             })) || []
         };
     },
@@ -305,6 +316,10 @@ export const instructorApi = {
 
     createPart: async (lectureId: string, data: { title: string; order: number }): Promise<Part> => {
         return apiClient.post<Part>(`/instructor/sections/${lectureId}/lessons`, data);
+    },
+
+    createSubPart: async (parentPartId: string, data: { title: string; order: number }): Promise<Part> => {
+        return apiClient.post<Part>(`/lessons/${parentPartId}/sub-lessons`, data);
     },
 
     updatePart: async (partId: string, data: { title: string; order: number }): Promise<Part> => {
