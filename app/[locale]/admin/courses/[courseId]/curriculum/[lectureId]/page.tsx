@@ -157,6 +157,59 @@ export default function PartEditorPage() {
 
     const [textContent, setTextContent] = useState('');
 
+    // Document upload queue
+    const [docQueue, setDocQueue] = useState<File[]>([]);
+    const [currentDocIndex, setCurrentDocIndex] = useState(0);
+    const [currentDocName, setCurrentDocName] = useState('');
+    const isProcessingDocQueue = useRef(false);
+
+    const uploadSingleDoc = async (file: File): Promise<void> => {
+        setCurrentDocName(file.name);
+        setUploadProgress(0);
+        try {
+            await instructorApi.uploadPdf(partId, file, isSecure);
+            toast.success(`✅ ${file.name}`);
+        } catch (error) {
+            toast.error(`❌ ${file.name}: Upload failed`);
+            throw error;
+        }
+    };
+
+    const handleSelectDocs = (files: FileList | null) => {
+        if (!files || files.length === 0) return;
+        const fileArray = Array.from(files).filter(f => {
+            if (f.size > MAX_DOCUMENT_SIZE) {
+                toast.error(`${f.name}: exceeds 100MB limit`);
+                return false;
+            }
+            return true;
+        });
+        if (fileArray.length === 0) return;
+        setDocQueue(fileArray);
+        setCurrentDocIndex(0);
+        setIsUploading(true);
+        isProcessingDocQueue.current = true;
+        toast.info(`📋 ${fileArray.length} document(s) queued for upload`);
+    };
+
+    useEffect(() => {
+        if (!isProcessingDocQueue.current || docQueue.length === 0) return;
+        if (currentDocIndex >= docQueue.length) {
+            setIsUploading(false);
+            setDocQueue([]);
+            setCurrentDocIndex(0);
+            setCurrentDocName('');
+            isProcessingDocQueue.current = false;
+            fetchPart();
+            toast.success(`🎉 All ${docQueue.length} documents uploaded!`);
+            return;
+        }
+        const file = docQueue[currentDocIndex];
+        uploadSingleDoc(file)
+            .then(() => setCurrentDocIndex(prev => prev + 1))
+            .catch(() => setCurrentDocIndex(prev => prev + 1));
+    }, [currentDocIndex, docQueue]);
+
     const handleUploadPdf = async (file: File) => {
         if (!file) return;
         if (file.size > MAX_DOCUMENT_SIZE) {
@@ -168,7 +221,7 @@ export default function PartEditorPage() {
             await instructorApi.uploadPdf(partId, file, isSecure);
             toast.success('Document uploaded');
             fetchPart();
-            setTextContent(''); // Reset text
+            setTextContent('');
         } catch (error) {
             toast.error('Failed to upload file');
         } finally {
@@ -298,17 +351,18 @@ export default function PartEditorPage() {
                                         <input
                                             type="file"
                                             accept=".pdf,.ppt,.pptx,.doc,.docx,.txt,.cpp,.c,.java,.js,.ts,.py,.html,.cs,.php,.rb"
+                                            multiple
                                             className="hidden"
                                             id="pdf-upload-main"
-                                            onChange={(e) => handleUploadPdf(e.target.files?.[0]!)}
+                                            onChange={(e) => { handleSelectDocs(e.target.files); e.target.value = ''; }}
                                             disabled={isUploading}
                                         />
                                         <Button className="w-full" variant="outline" onClick={() => document.getElementById('pdf-upload-main')?.click()} disabled={isUploading}>
-                                            <FileText className="mr-2 h-4 w-4" /> Upload Document
+                                            <FileText className="mr-2 h-4 w-4" /> {isProcessingDocQueue.current && isUploading ? `Uploading ${currentDocIndex + 1}/${docQueue.length}...` : 'Upload Documents (multi)'}
                                         </Button>
                                     </div>
                                     <p className="text-xs text-muted-foreground">
-                                        Supports PDF, Word, PPTX, Text, Code files (.cpp, .java, .py, .js...) (max 100MB)
+                                        Supports PDF, Word, PPTX, Text, Code files (max 100MB each). Select multiple!
                                     </p>
                                 </TabsContent>
                                 <TabsContent value="text" className="space-y-2">
@@ -331,11 +385,16 @@ export default function PartEditorPage() {
                                         📹 {currentVideoIndex + 1} / {videoQueue.length}: {currentVideoName}
                                     </div>
                                 )}
+                                {docQueue.length > 0 && (
+                                    <div className="text-xs font-medium text-blue-500">
+                                        📄 {currentDocIndex + 1} / {docQueue.length}: {currentDocName}
+                                    </div>
+                                )}
                                 <div className="text-xs text-muted-foreground flex justify-between">
-                                    <span>{currentVideoName || 'Uploading...'}</span>
-                                    <span>{uploadProgress}%</span>
+                                    <span>{currentVideoName || currentDocName || 'Uploading...'}</span>
+                                    <span>{videoQueue.length > 0 ? `${uploadProgress}%` : 'Processing...'}</span>
                                 </div>
-                                <Progress value={Math.min(100, Math.max(0, uploadProgress))} />
+                                {videoQueue.length > 0 && <Progress value={Math.min(100, Math.max(0, uploadProgress))} />}
                             </div>
                         )}
                     </CardContent>
