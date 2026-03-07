@@ -505,7 +505,7 @@ export default function PartEditorPage() {
                                     <div className="relative">
                                         <input
                                             type="file"
-                                            accept=".pdf,.ppt,.pptx,.doc,.docx,.txt,.cpp,.c,.java,.js,.ts,.py,.html,.cs,.php,.rb"
+                                            accept=".pdf,.ppt,.pptx,.doc,.docx,.txt,.cpp,.c,.java,.js,.ts,.py,.html,.cs,.php,.rb,.jpg,.jpeg,.png,.webp"
                                             multiple
                                             className="hidden"
                                             id="pdf-upload-main"
