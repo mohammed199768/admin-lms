@@ -235,7 +235,19 @@ export default function CoursesPage() {
                 errors.push(file.name);
             }
             current++;
-            setImportProgress(p => ({ ...p, current }));
+            setImportProgress(p => ({ ...p, current: p.current + 1 }));
+        };
+
+        // Concurrent upload helper (4 workers)
+        const uploadConcurrent = async (files: { file: File; partId: string }[], concurrency = 4) => {
+            const queue = [...files];
+            const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
+                while (queue.length > 0) {
+                    const item = queue.shift();
+                    if (item) await uploadFile(item.file, item.partId);
+                }
+            });
+            await Promise.all(workers);
         };
 
         try {
@@ -244,17 +256,17 @@ export default function CoursesPage() {
             const lectures = folderStructure.children?.filter(c => c.type === 'folder') || [];
             const rootFiles = folderStructure.children?.filter(c => c.type === 'file') || [];
 
+            // Collect all files with their target partId
+            const allFilesToUpload: { file: File; partId: string }[] = [];
+
             // Root files → default lecture + part
             if (rootFiles.length > 0) {
                 const lec = await instructorApi.createLecture(course.id, { title: folderStructure.name, order: 0 });
                 const part = await instructorApi.createPart(lec.id, { title: folderStructure.name, order: 1 });
-                for (const f of rootFiles) {
-                    if (!f.file) continue;
-                    await uploadFile(f.file, part.id);
-                }
+                rootFiles.forEach(f => { if (f.file) allFilesToUpload.push({ file: f.file, partId: part.id }); });
             }
 
-            // Each subfolder → Lecture
+            // Each subfolder → Lecture (create structure first, collect files)
             for (let li = 0; li < lectures.length; li++) {
                 const lec = lectures[li];
                 const lecture = await instructorApi.createLecture(course.id, { title: lec.name, order: li + 1 });
@@ -262,28 +274,24 @@ export default function CoursesPage() {
                 const directFiles = lec.children?.filter(c => c.type === 'file') || [];
                 const subFolders = lec.children?.filter(c => c.type === 'folder') || [];
 
-                // Direct files in lecture → auto Part
                 if (directFiles.length > 0) {
                     const autoPart = await instructorApi.createPart(lecture.id, { title: lec.name, order: 1 });
-                    for (const f of directFiles) {
-                        if (!f.file) continue;
-                        await uploadFile(f.file, autoPart.id);
-                    }
+                    directFiles.forEach(f => { if (f.file) allFilesToUpload.push({ file: f.file, partId: autoPart.id }); });
                 }
 
-                // Subfolders → Parts
                 for (let pi = 0; pi < subFolders.length; pi++) {
                     const sf = subFolders[pi];
                     const part = await instructorApi.createPart(lecture.id, { title: sf.name, order: pi + (directFiles.length > 0 ? 2 : 1) });
                     const partFiles = sf.children?.filter(c => c.type === 'file') || [];
-                    for (const f of partFiles) {
-                        if (!f.file) continue;
-                        await uploadFile(f.file, part.id);
-                    }
+                    partFiles.forEach(f => { if (f.file) allFilesToUpload.push({ file: f.file, partId: part.id }); });
                 }
             }
 
-            setImportProgress({ current: totalFiles, total: totalFiles, currentFile: 'Done!' });
+            // Upload all files concurrently (4 at a time)
+            setImportProgress({ current: 0, total: allFilesToUpload.length, currentFile: 'Uploading files...' });
+            await uploadConcurrent(allFilesToUpload, 4);
+
+            setImportProgress({ current: allFilesToUpload.length, total: allFilesToUpload.length, currentFile: 'Done!' });
             setImportErrors(errors);
             setImportStep('done');
             queryClient.invalidateQueries({ queryKey: ['my-courses'] });
