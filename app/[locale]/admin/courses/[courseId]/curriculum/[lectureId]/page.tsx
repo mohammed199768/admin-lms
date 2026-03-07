@@ -251,7 +251,7 @@ export default function PartEditorPage() {
                                     <div className="relative">
                                         <input
                                             type="file"
-                                            accept=".pdf,.ppt,.pptx,.doc,.docx,.txt"
+                                            accept=".pdf,.ppt,.pptx,.doc,.docx,.txt,.cpp,.c,.java,.js,.ts,.py,.html,.cs,.php,.rb"
                                             className="hidden"
                                             id="pdf-upload-main"
                                             onChange={(e) => handleUploadPdf(e.target.files?.[0]!)}
@@ -262,7 +262,7 @@ export default function PartEditorPage() {
                                         </Button>
                                     </div>
                                     <p className="text-xs text-muted-foreground">
-                                        Supports PDF, Word, PPTX, Text (max 100MB)
+                                        Supports PDF, Word, PPTX, Text, Code files (.cpp, .java, .py, .js...) (max 100MB)
                                     </p>
                                 </TabsContent>
                                 <TabsContent value="text" className="space-y-2">
