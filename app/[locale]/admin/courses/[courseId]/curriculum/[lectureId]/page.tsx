@@ -334,7 +334,25 @@ export default function PartEditorPage() {
                                         </div>
                                     </div>
                                 </div>
-                                <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                                <div className="flex items-center gap-1">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (confirm('Delete this sub-part?')) {
+                                                instructorApi.deletePart(sub.id).then(() => {
+                                                    toast.success('Sub-part deleted');
+                                                    fetchPart();
+                                                }).catch(() => toast.error('Failed to delete sub-part'));
+                                            }
+                                        }}
+                                    >
+                                        <Trash className="h-3 w-3 text-destructive" />
+                                    </Button>
+                                    <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                                </div>
                             </div>
                         ))}
                         {(!part.subParts || part.subParts.length === 0) && (

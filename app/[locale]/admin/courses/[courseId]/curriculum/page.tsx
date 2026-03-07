@@ -159,17 +159,6 @@ export default function CurriculumPage() {
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-1">
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        className="opacity-0 group-hover:opacity-100 transition-opacity"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleQuickAddSubPart(part.id, lecture.id);
-                                                        }}
-                                                    >
-                                                        <Plus className="h-3 w-3 mr-1" /> Sub-part
-                                                    </Button>
                                                     <Button variant="ghost" size="sm">
                                                         <ArrowRight className="h-4 w-4 text-muted-foreground" />
                                                     </Button>
