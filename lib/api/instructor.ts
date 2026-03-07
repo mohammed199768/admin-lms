@@ -359,8 +359,11 @@ export const instructorApi = {
     /**
      * Upload a file with pre-built FormData (supports Unicode titles)
      */
-    uploadPartFile: async (partId: string, formData: FormData): Promise<{ storageKey: string }> => {
-        return apiClient.post(`/lessons/${partId}/document`, formData);
+    uploadPartFile: async (partId: string, formData: FormData, title?: string): Promise<{ storageKey: string }> => {
+        const url = title
+            ? `/lessons/${partId}/document?title=${title}`
+            : `/lessons/${partId}/document`;
+        return apiClient.post(url, formData);
     },
 
     /**

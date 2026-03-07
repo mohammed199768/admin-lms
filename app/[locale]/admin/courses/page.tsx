@@ -229,8 +229,7 @@ export default function CoursesPage() {
                     const formData = new FormData();
                     formData.append('file', file);
                     formData.append('isSecure', 'false');
-                    formData.append('title', new Blob([title], { type: 'text/plain;charset=utf-8' }), title);
-                    await instructorApi.uploadPartFile(partId, formData);
+                    await instructorApi.uploadPartFile(partId, formData, encodeURIComponent(title));
                 }
             } catch {
                 errors.push(file.name);
