@@ -319,7 +319,7 @@ export const instructorApi = {
     },
 
     createSubPart: async (parentPartId: string, data: { title: string; order: number }): Promise<Part> => {
-        return apiClient.post<Part>(`/lessons/${parentPartId}/sub-lessons`, data);
+        return apiClient.post<Part>(`/instructor/lessons/${parentPartId}/sub-lessons`, data);
     },
 
     updatePart: async (partId: string, data: { title: string; order: number }): Promise<Part> => {
