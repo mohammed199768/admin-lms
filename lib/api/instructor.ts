@@ -368,8 +368,8 @@ export const instructorApi = {
 
     uploadPartImage: async (partId: string, formData: FormData, title?: string): Promise<{ storageKey: string }> => {
         const url = title
-            ? `/instructor/lessons/${partId}/files?title=${title}`
-            : `/instructor/lessons/${partId}/files`;
+            ? `/lessons/${partId}/document?title=${title}`
+            : `/lessons/${partId}/document`;
         return apiClient.post(url, formData);
     },
 
