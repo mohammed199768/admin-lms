@@ -610,6 +610,25 @@ export const instructorApi = {
     },
 
     // ========================================================================
+    // TRAILER
+    // ========================================================================
+
+    getTrailerConfig: async (courseId: string): Promise<{
+        trailerEnabled: boolean;
+        selectedLectureIds: string[];
+        allLectures: { id: string; title: string; order: number }[];
+    }> => {
+        return apiClient.get(`/instructor/courses/${courseId}/trailer`);
+    },
+
+    updateTrailerConfig: async (courseId: string, data: {
+        trailerEnabled: boolean;
+        lectureIds: string[];
+    }): Promise<void> => {
+        return apiClient.patch(`/instructor/courses/${courseId}/trailer`, data);
+    },
+
+    // ========================================================================
     // ADMIN STUDENT MANAGEMENT
     // ========================================================================
 

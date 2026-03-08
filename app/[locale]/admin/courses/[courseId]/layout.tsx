@@ -4,7 +4,7 @@ import { ReactNode, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { LayoutDashboard, BookOpen, Users, DollarSign, Loader2 } from 'lucide-react';
+import { LayoutDashboard, BookOpen, Users, DollarSign, Loader2, Play } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { instructorApi, type Course } from '@/lib/api/instructor';
 import { toast } from 'sonner';
@@ -70,6 +70,7 @@ export default function CourseLayout({ children }: { children: ReactNode }) {
         { label: t('curriculum'), href: `${baseUrl}/curriculum`, icon: BookOpen },
         { label: t('pricing'), href: `${baseUrl}/pricing`, icon: DollarSign },
         { label: t('students'), href: `${baseUrl}/students`, icon: Users },
+        { label: t('trailer'), href: `${baseUrl}/trailer`, icon: Play },
     ];
 
     return (
