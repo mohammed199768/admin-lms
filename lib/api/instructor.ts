@@ -361,14 +361,23 @@ export const instructorApi = {
      */
     uploadPartFile: async (partId: string, formData: FormData, title?: string): Promise<{ storageKey: string }> => {
         if (title) formData.append('title', title);
-        return apiClient.post(`/lessons/${partId}/document`, formData);
+        try {
+            return await apiClient.post(`/instructor/lessons/${partId}/files`, formData);
+        } catch {
+            // Backward compatibility with older backend route.
+            return apiClient.post(`/lessons/${partId}/document`, formData);
+        }
     },
 
     uploadPartImage: async (partId: string, formData: FormData, title?: string): Promise<{ storageKey: string }> => {
         if (title) formData.append('title', title);
-        // Images should stay direct (non-secure conversion pipeline).
         formData.append('isSecure', 'false');
-        return apiClient.post(`/lessons/${partId}/document`, formData);
+        try {
+            return await apiClient.post(`/instructor/lessons/${partId}/files`, formData);
+        } catch {
+            // Backward compatibility with older backend route.
+            return apiClient.post(`/lessons/${partId}/document`, formData);
+        }
     },
 
     /**
