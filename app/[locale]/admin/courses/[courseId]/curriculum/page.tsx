@@ -145,13 +145,16 @@ function SortablePartsList({
         // Optimistic update
         setParts(reordered);
 
-        // Save to backend
+        // Save to backend - use temp large orders first to avoid @@unique([lectureId, order]) conflict
         try {
-            await Promise.all(
-                reordered.map((part, index) =>
-                    instructorApi.updatePart(part.id, { title: part.title, order: index + 1 })
-                )
-            );
+            // Step 1: set temp orders (1000+) to avoid conflicts
+            for (let i = 0; i < reordered.length; i++) {
+                await instructorApi.updatePart(reordered[i].id, { title: reordered[i].title, order: 1000 + i });
+            }
+            // Step 2: set final orders
+            for (let i = 0; i < reordered.length; i++) {
+                await instructorApi.updatePart(reordered[i].id, { title: reordered[i].title, order: i + 1 });
+            }
             toast.success('Part order saved');
         } catch {
             toast.error('Failed to save part order');
@@ -317,17 +320,18 @@ export default function CurriculumPage() {
         // Optimistic update
         setLectures(reordered);
 
-        // Save to backend
+        // Sequential updates with temp orders to avoid @@unique([courseId, order]) conflict
         try {
-            await Promise.all(
-                reordered.map((lecture, index) =>
-                    instructorApi.updateLecture(lecture.id, { title: lecture.title, order: index + 1 })
-                )
-            );
-            toast.success('Lecture order saved');
+            for (let i = 0; i < reordered.length; i++) {
+                await instructorApi.updateLecture(reordered[i].id, { title: reordered[i].title, order: 1000 + i });
+            }
+            for (let i = 0; i < reordered.length; i++) {
+                await instructorApi.updateLecture(reordered[i].id, { title: reordered[i].title, order: i + 1 });
+            }
+            toast.success('Lecture order saved ✓');
         } catch {
             toast.error('Failed to save lecture order');
-            fetchContent(); // rollback
+            fetchContent();
         }
     };
 
