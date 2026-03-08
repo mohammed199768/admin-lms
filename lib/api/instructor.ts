@@ -360,17 +360,15 @@ export const instructorApi = {
      * Upload a file with pre-built FormData (supports Unicode titles)
      */
     uploadPartFile: async (partId: string, formData: FormData, title?: string): Promise<{ storageKey: string }> => {
-        const url = title
-            ? `/lessons/${partId}/document?title=${title}`
-            : `/lessons/${partId}/document`;
-        return apiClient.post(url, formData);
+        if (title) formData.append('title', title);
+        return apiClient.post(`/lessons/${partId}/document`, formData);
     },
 
     uploadPartImage: async (partId: string, formData: FormData, title?: string): Promise<{ storageKey: string }> => {
-        const url = title
-            ? `/lessons/${partId}/document?title=${title}`
-            : `/lessons/${partId}/document`;
-        return apiClient.post(url, formData);
+        if (title) formData.append('title', title);
+        // Images should stay direct (non-secure conversion pipeline).
+        formData.append('isSecure', 'false');
+        return apiClient.post(`/lessons/${partId}/document`, formData);
     },
 
     /**

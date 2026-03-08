@@ -176,7 +176,10 @@ export default function CoursesPage() {
         return (node.children || []).reduce((sum, c) => sum + countFiles(c), 0);
     };
 
-    const isVideoFile = (file: File) => /\.(mp4|mov|avi|mkv|webm)$/i.test(file.name);
+    const isVideoFile = (file: File) =>
+        file.type.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm)$/i.test(file.name);
+    const isImageFile = (file: File) =>
+        file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp)$/i.test(file.name);
 
     const handleImport = async () => {
         if (!folderStructure || !importUniId) return;
@@ -225,18 +228,22 @@ export default function CoursesPage() {
                     });
                 } else {
                     const title = file.name.replace(/\.[^/.]+$/, '');
-                    const isImage = /\.(jpg|jpeg|png|webp)$/i.test(file.name);
+                    const isImage = isImageFile(file);
                     const formData = new FormData();
                     formData.append('file', file);
 
                     if (isImage) {
-                        await instructorApi.uploadPartImage(partId, formData, encodeURIComponent(title));
+                        await instructorApi.uploadPartImage(partId, formData, title);
                     } else {
-                        await instructorApi.uploadPartFile(partId, formData, encodeURIComponent(title));
+                        await instructorApi.uploadPartFile(partId, formData, title);
                     }
                 }
-            } catch {
-                errors.push(file.name);
+            } catch (error: any) {
+                const message =
+                    error?.response?.data?.message ||
+                    error?.message ||
+                    'Upload failed';
+                errors.push(`${file.name}: ${message}`);
             }
             current++;
             setImportProgress(p => ({ ...p, current: p.current + 1 }));
