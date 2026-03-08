@@ -366,6 +366,13 @@ export const instructorApi = {
         return apiClient.post(url, formData);
     },
 
+    uploadPartImage: async (partId: string, formData: FormData, title?: string): Promise<{ storageKey: string }> => {
+        const url = title
+            ? `/instructor/lessons/${partId}/files?title=${title}`
+            : `/instructor/lessons/${partId}/files`;
+        return apiClient.post(url, formData);
+    },
+
     /**
      * PERFORMANCE: Chunked upload for very large files or unstable networks
      * Splits file into 5MB chunks for reliable uploads

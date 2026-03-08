@@ -224,12 +224,16 @@ export default function CoursesPage() {
                         upload.start();
                     });
                 } else {
-                    // Document/Image → direct upload with Unicode title
                     const title = file.name.replace(/\.[^/.]+$/, '');
+                    const isImage = /\.(jpg|jpeg|png|webp)$/i.test(file.name);
                     const formData = new FormData();
                     formData.append('file', file);
-                    formData.append('isSecure', 'false');
-                    await instructorApi.uploadPartFile(partId, formData, encodeURIComponent(title));
+
+                    if (isImage) {
+                        await instructorApi.uploadPartImage(partId, formData, encodeURIComponent(title));
+                    } else {
+                        await instructorApi.uploadPartFile(partId, formData, encodeURIComponent(title));
+                    }
                 }
             } catch {
                 errors.push(file.name);
