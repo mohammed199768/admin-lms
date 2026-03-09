@@ -62,6 +62,8 @@ export default function UniversityDetailPage() {
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [newCourseTitle, setNewCourseTitle] = useState('');
 
+    const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
+    const [newUniversityName, setNewUniversityName] = useState('');
 
     const { data: university, isLoading: isUniLoading } = useQuery({
         queryKey: ['university', universityId],
@@ -100,6 +102,29 @@ export default function UniversityDetailPage() {
         createCourseMutation.mutate();
     };
 
+    const renameUniversityMutation = useMutation({
+        mutationFn: async () => {
+            return catalogApi.updateUniversity(universityId, {
+                name: newUniversityName,
+            });
+        },
+        onSuccess: () => {
+            toast.success('University renamed successfully');
+            setNewUniversityName('');
+            setIsRenameDialogOpen(false);
+            queryClient.invalidateQueries({ queryKey: ['university', universityId] });
+            queryClient.invalidateQueries({ queryKey: ['universities'] }); // Refresh list view
+        },
+        onError: () => {
+            toast.error('Failed to rename university');
+        }
+    });
+
+    const handleRenameUniversity = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newUniversityName.trim()) return;
+        renameUniversityMutation.mutate();
+    };
 
 
     const filteredCourses = courses.filter((c: any) =>
@@ -175,8 +200,50 @@ export default function UniversityDetailPage() {
                             <GraduationCap className="me-2 h-3.5 w-3.5" />
                             {t('university')}
                         </div>
-                        <h1 className="text-4xl md:text-5xl font-black text-white leading-tight tracking-tight">
+                        <h1 className="text-4xl md:text-5xl font-black text-white leading-tight tracking-tight flex flex-wrap items-center justify-center md:justify-start gap-4">
                             {university.name}
+                            
+                            <Dialog open={isRenameDialogOpen} onOpenChange={(open) => {
+                                setIsRenameDialogOpen(open);
+                                if (open && !newUniversityName) {
+                                    setNewUniversityName(university.name);
+                                }
+                            }}>
+                                <DialogTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 text-white">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-pencil"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
+                                    </Button>
+                                </DialogTrigger>
+                                <DialogContent className="sm:max-w-[450px] rounded-[2rem] border-none shadow-2xl p-0 overflow-hidden bg-white dark:bg-slate-950">
+                                    <div className="bg-primary p-8 text-white relative overflow-hidden">
+                                        <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl -mr-16 -mt-16"></div>
+                                        <DialogTitle className="text-2xl font-black relative z-10">Rename University</DialogTitle>
+                                        <DialogDescription className="text-primary-foreground/90 mt-2 font-medium text-sm relative z-10">
+                                            Change the name of {university.name}.
+                                        </DialogDescription>
+                                    </div>
+                                    <div className="p-8">
+                                        <form onSubmit={handleRenameUniversity} className="space-y-6">
+                                            <div className="space-y-2">
+                                                <label className="text-slate-900 dark:text-slate-200 font-bold text-xs uppercase tracking-widest">New Name</label>
+                                                <Input
+                                                    value={newUniversityName}
+                                                    onChange={(e) => setNewUniversityName(e.target.value)}
+                                                    placeholder="Enter new name"
+                                                    required
+                                                    className="rounded-xl h-12 border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-base font-medium"
+                                                />
+                                            </div>
+                                            <DialogFooter className="pt-4">
+                                                <Button type="submit" disabled={renameUniversityMutation.isPending} className="w-full rounded-xl font-black h-14 text-lg shadow-xl shadow-primary/10 transition-all hover:scale-[1.02]">
+                                                    {renameUniversityMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                                    Save Changes
+                                                </Button>
+                                            </DialogFooter>
+                                        </form>
+                                    </div>
+                                </DialogContent>
+                            </Dialog>
                         </h1>
                         <div className="flex flex-wrap items-center gap-8 justify-center md:justify-start">
                              <div className="flex flex-col">
@@ -358,8 +425,6 @@ export default function UniversityDetailPage() {
                     )}
                 </div>
             </div>
-
-            {/* Add Major Dialog Removed */}
         </div>
     );
 }

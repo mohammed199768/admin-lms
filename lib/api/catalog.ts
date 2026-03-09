@@ -75,6 +75,10 @@ export const catalogApi = {
         return apiClient.post<University>('/catalog/universities', data);
     },
 
+    updateUniversity: async (universityId: string, data: { name: string }) => {
+        return apiClient.put<University>(`/catalog/universities/${universityId}`, data);
+    },
+
     deleteUniversity: async (universityId: string) => {
         return apiClient.delete<{
             universityId: string;
