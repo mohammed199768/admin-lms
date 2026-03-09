@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 export default function TrailerConfigPage() {
   const params = useParams();
   const courseId = params.courseId as string;
+  const locale = (params.locale as string) || 'en';
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -85,6 +86,9 @@ export default function TrailerConfigPage() {
               <p className="text-sm text-muted-foreground">
                 When enabled, verified students can access the trailer page
               </p>
+              <p className="text-xs text-amber-600 mt-1">
+                Note: Trailer appears in student app only for published courses.
+              </p>
             </div>
             <div className="flex items-center gap-3">
               {trailerEnabled
@@ -148,7 +152,7 @@ export default function TrailerConfigPage() {
               <Eye className="h-4 w-4" />
               <span>Trailer URL: </span>
               <code className="font-mono text-xs bg-green-100 dark:bg-green-900 px-2 py-0.5 rounded">
-                /courses/{courseId}/trailer
+                /{locale}/trailer/{courseId}
               </code>
             </div>
           </CardContent>
