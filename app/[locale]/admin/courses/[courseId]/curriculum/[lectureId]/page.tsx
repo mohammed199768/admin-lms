@@ -152,7 +152,7 @@ export default function PartEditorPage() {
         toast.success('Sub-part renamed ✓');
     };
 
-    const uploadSingleVideo = (file: File): Promise<void> => {
+    const uploadSingleVideo = useCallback((file: File): Promise<void> => {
         return new Promise(async (resolve, reject) => {
             try {
                 setCurrentVideoName(file.name);
@@ -190,7 +190,7 @@ export default function PartEditorPage() {
                 upload.start();
             } catch (error) { toast.error(`Failed to init: ${file.name}`); reject(error); }
         });
-    };
+    }, [partId]);
 
     const isVideoFile = (file: File) => file.type.startsWith('video/');
     const SKIP_FILES = ['desktop.ini', '.ds_store', 'thumbs.db', '.thumbs', '.gitkeep', '.gitignore'];
@@ -209,95 +209,7 @@ export default function PartEditorPage() {
         toast.info(`📋 ${fileArray.length} file(s) queued for upload`);
     };
 
-    useEffect(() => {
-        if (!isProcessingQueue.current || videoQueue.length === 0) return;
-        if (currentVideoIndex >= videoQueue.length) {
-            setIsUploading(false);
-            setVideoQueue([]);
-            setCurrentVideoIndex(0);
-            setCurrentVideoName('');
-            isProcessingQueue.current = false;
-            fetchPart();
-            toast.success(`🎉 All ${videoQueue.length} videos uploaded!`);
-            return;
-        }
-        const file = videoQueue[currentVideoIndex];
-        const uploader = isVideoFile(file) ? uploadSingleVideo(file) : uploadFileToTarget(partId, file);
-        uploader
-            .then(() => setCurrentVideoIndex(prev => prev + 1))
-            .catch(() => setCurrentVideoIndex(prev => prev + 1));
-    }, [currentVideoIndex, videoQueue]);
-
-    const [textContent, setTextContent] = useState('');
-    const [docQueue, setDocQueue] = useState<File[]>([]);
-    const [currentDocIndex, setCurrentDocIndex] = useState(0);
-    const [currentDocName, setCurrentDocName] = useState('');
-    const isProcessingDocQueue = useRef(false);
-
-    const uploadSingleDoc = async (file: File): Promise<void> => {
-        setCurrentDocName(file.name);
-        setUploadProgress(0);
-        try {
-            await instructorApi.uploadPdf(partId, file, isSecure);
-            toast.success(`✅ ${file.name}`);
-        } catch (error) {
-            toast.error(`❌ ${file.name}: Upload failed`);
-            throw error;
-        }
-    };
-
-    const handleSelectDocs = (files: FileList | null) => {
-        if (!files || files.length === 0) return;
-        const fileArray = Array.from(files).filter(f => {
-            if (f.size > MAX_DOCUMENT_SIZE) { toast.error(`${f.name}: exceeds 100MB limit`); return false; }
-            return true;
-        });
-        if (fileArray.length === 0) return;
-        setDocQueue(fileArray);
-        setCurrentDocIndex(0);
-        setIsUploading(true);
-        isProcessingDocQueue.current = true;
-        toast.info(`📋 ${fileArray.length} document(s) queued for upload`);
-    };
-
-    useEffect(() => {
-        if (!isProcessingDocQueue.current || docQueue.length === 0) return;
-        if (currentDocIndex >= docQueue.length) {
-            setIsUploading(false);
-            setDocQueue([]);
-            setCurrentDocIndex(0);
-            setCurrentDocName('');
-            isProcessingDocQueue.current = false;
-            fetchPart();
-            toast.success(`🎉 All ${docQueue.length} documents uploaded!`);
-            return;
-        }
-        const file = docQueue[currentDocIndex];
-        uploadSingleDoc(file)
-            .then(() => setCurrentDocIndex(prev => prev + 1))
-            .catch(() => setCurrentDocIndex(prev => prev + 1));
-    }, [currentDocIndex, docQueue]);
-
-    const handleUploadPdf = async (file: File) => {
-        if (!file) return;
-        if (file.size > MAX_DOCUMENT_SIZE) { toast.error('Maximum document size is 100MB'); return; }
-        try {
-            setIsUploading(true);
-            await instructorApi.uploadPdf(partId, file, isSecure);
-            toast.success('Document uploaded');
-            fetchPart();
-            setTextContent('');
-        } catch (error) {
-            toast.error('Failed to upload file');
-        } finally {
-            setIsUploading(false);
-        }
-    };
-
-    const [isImporting, setIsImporting] = useState(false);
-    const [importStatus, setImportStatus] = useState('');
-
-    const uploadVideoToTarget = (targetPartId: string, file: File): Promise<void> => {
+    const uploadVideoToTarget = useCallback((targetPartId: string, file: File): Promise<void> => {
         return new Promise(async (resolve, reject) => {
             try {
                 const data = await instructorApi.initVideoUpload(file.name);
@@ -332,15 +244,103 @@ export default function PartEditorPage() {
                 upload.start();
             } catch (error) { reject(error); }
         });
-    };
+    }, []);
 
-    const uploadFileToTarget = async (targetPartId: string, file: File) => {
+    const uploadFileToTarget = useCallback(async (targetPartId: string, file: File) => {
         if (isVideoFile(file)) {
             await uploadVideoToTarget(targetPartId, file);
         } else {
             await instructorApi.uploadPdf(targetPartId, file, isSecure);
         }
+    }, [isSecure, uploadVideoToTarget]);
+
+    useEffect(() => {
+        if (!isProcessingQueue.current || videoQueue.length === 0) return;
+        if (currentVideoIndex >= videoQueue.length) {
+            setIsUploading(false);
+            setVideoQueue([]);
+            setCurrentVideoIndex(0);
+            setCurrentVideoName('');
+            isProcessingQueue.current = false;
+            fetchPart();
+            toast.success(`🎉 All ${videoQueue.length} videos uploaded!`);
+            return;
+        }
+        const file = videoQueue[currentVideoIndex];
+        const uploader = isVideoFile(file) ? uploadSingleVideo(file) : uploadFileToTarget(partId, file);
+        uploader
+            .then(() => setCurrentVideoIndex(prev => prev + 1))
+            .catch(() => setCurrentVideoIndex(prev => prev + 1));
+    }, [currentVideoIndex, videoQueue, fetchPart, partId, uploadFileToTarget, uploadSingleVideo]);
+
+    const [textContent, setTextContent] = useState('');
+    const [docQueue, setDocQueue] = useState<File[]>([]);
+    const [currentDocIndex, setCurrentDocIndex] = useState(0);
+    const [currentDocName, setCurrentDocName] = useState('');
+    const isProcessingDocQueue = useRef(false);
+
+    const uploadSingleDoc = useCallback(async (file: File): Promise<void> => {
+        setCurrentDocName(file.name);
+        setUploadProgress(0);
+        try {
+            await instructorApi.uploadPdf(partId, file, isSecure);
+            toast.success(`✅ ${file.name}`);
+        } catch (error) {
+            toast.error(`❌ ${file.name}: Upload failed`);
+            throw error;
+        }
+    }, [isSecure, partId]);
+
+    const handleSelectDocs = (files: FileList | null) => {
+        if (!files || files.length === 0) return;
+        const fileArray = Array.from(files).filter(f => {
+            if (f.size > MAX_DOCUMENT_SIZE) { toast.error(`${f.name}: exceeds 100MB limit`); return false; }
+            return true;
+        });
+        if (fileArray.length === 0) return;
+        setDocQueue(fileArray);
+        setCurrentDocIndex(0);
+        setIsUploading(true);
+        isProcessingDocQueue.current = true;
+        toast.info(`📋 ${fileArray.length} document(s) queued for upload`);
     };
+
+    useEffect(() => {
+        if (!isProcessingDocQueue.current || docQueue.length === 0) return;
+        if (currentDocIndex >= docQueue.length) {
+            setIsUploading(false);
+            setDocQueue([]);
+            setCurrentDocIndex(0);
+            setCurrentDocName('');
+            isProcessingDocQueue.current = false;
+            fetchPart();
+            toast.success(`🎉 All ${docQueue.length} documents uploaded!`);
+            return;
+        }
+        const file = docQueue[currentDocIndex];
+        uploadSingleDoc(file)
+            .then(() => setCurrentDocIndex(prev => prev + 1))
+            .catch(() => setCurrentDocIndex(prev => prev + 1));
+    }, [currentDocIndex, docQueue, fetchPart, uploadSingleDoc]);
+
+    const handleUploadPdf = async (file: File) => {
+        if (!file) return;
+        if (file.size > MAX_DOCUMENT_SIZE) { toast.error('Maximum document size is 100MB'); return; }
+        try {
+            setIsUploading(true);
+            await instructorApi.uploadPdf(partId, file, isSecure);
+            toast.success('Document uploaded');
+            fetchPart();
+            setTextContent('');
+        } catch (error) {
+            toast.error('Failed to upload file');
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    const [isImporting, setIsImporting] = useState(false);
+    const [importStatus, setImportStatus] = useState('');
 
     const handleFolderImport = async (files: FileList | null) => {
         if (!files || files.length === 0) return;
