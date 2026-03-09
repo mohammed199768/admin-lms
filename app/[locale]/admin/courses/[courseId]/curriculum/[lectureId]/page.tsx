@@ -163,6 +163,7 @@ export default function PartEditorPage() {
                 const upload = new Upload(file, {
                     endpoint: process.env.NEXT_PUBLIC_BUNNY_TUS_ENDPOINT || 'https://video.bunnycdn.com/tusupload',
                     retryDelays: [0, 3000, 5000],
+                    chunkSize: 5 * 1024 * 1024, // 5MB chunks for reliable uploads on slow connections
                     headers: {
                         AuthorizationSignature: authorizationSignature,
                         AuthorizationExpire: expirationTime.toString(),
@@ -218,6 +219,7 @@ export default function PartEditorPage() {
                 const upload = new Upload(file, {
                     endpoint: process.env.NEXT_PUBLIC_BUNNY_TUS_ENDPOINT || 'https://video.bunnycdn.com/tusupload',
                     retryDelays: [0, 3000, 5000],
+                    chunkSize: 5 * 1024 * 1024, // 5MB chunks for reliable uploads on slow connections
                     headers: {
                         AuthorizationSignature: authorizationSignature,
                         AuthorizationExpire: expirationTime.toString(),
