@@ -4,7 +4,24 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { instructorApi, type Part, type PartAsset } from '@/lib/api/instructor';
 import { toast } from 'sonner';
-import { Loader2, ChevronLeft, Video, FileText, Trash, Plus, ArrowRight, FolderUp, Pencil } from 'lucide-react';
+import { Loader2, ChevronLeft, Video, FileText, Trash, Plus, ArrowRight, FolderUp, Pencil, GripVertical } from 'lucide-react';
+import {
+    DndContext,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    DragEndEvent,
+} from '@dnd-kit/core';
+import {
+    arrayMove,
+    SortableContext,
+    sortableKeyboardCoordinates,
+    useSortable,
+    verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -73,6 +90,130 @@ function RenameDialog({
                 </DialogFooter>
             </DialogContent>
         </Dialog>
+    );
+}
+
+// ─── Sortable Asset ──────────────────────────────────────────────────────────
+
+function SortableAsset({
+    asset,
+    onDelete,
+    onRename,
+}: {
+    asset: import('@/lib/api/instructor').PartAsset;
+    onDelete: (id: string) => void;
+    onRename: (asset: { id: string; title: string }) => void;
+}) {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: asset.id });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+        zIndex: isDragging ? 999 : undefined,
+    };
+
+    return (
+        <div ref={setNodeRef} style={style}
+            className="flex items-center justify-between p-3 border rounded-lg bg-card group">
+            <div className="flex items-center gap-3 flex-1">
+                {/* Drag handle */}
+                <div
+                    {...attributes}
+                    {...listeners}
+                    className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-muted"
+                    onClick={e => e.stopPropagation()}
+                >
+                    <GripVertical className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div className="p-2 bg-muted rounded">
+                    {asset.type === 'VIDEO'
+                        ? <Video className="h-4 w-4" />
+                        : <FileText className="h-4 w-4 text-blue-500" />}
+                </div>
+                <div>
+                    <div className="font-medium">{asset.title}</div>
+                    <div className="text-xs text-muted-foreground">{asset.type}</div>
+                </div>
+            </div>
+            <div className="flex items-center gap-1">
+                {/* Rename asset */}
+                <Button variant="ghost" size="icon"
+                    className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={() => onRename({ id: asset.id, title: asset.title })}>
+                    <Pencil className="h-4 w-4 text-muted-foreground" />
+                </Button>
+                {/* Delete asset */}
+                <Button variant="ghost" size="icon"
+                    onClick={() => onDelete(asset.id)}>
+                    <Trash className="h-4 w-4 text-destructive" />
+                </Button>
+            </div>
+        </div>
+    );
+}
+
+// ─── Sortable Asset List ──────────────────────────────────────────────────────
+
+function SortableAssetList({
+    assets: initialAssets,
+    onDelete,
+    onRename,
+}: {
+    assets: import('@/lib/api/instructor').PartAsset[];
+    onDelete: (id: string) => void;
+    onRename: (asset: { id: string; title: string }) => void;
+}) {
+    const [assets, setAssets] = useState(initialAssets);
+
+    useEffect(() => {
+        setAssets(initialAssets);
+    }, [initialAssets]);
+
+    const sensors = useSensors(
+        useSensor(PointerSensor),
+        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    );
+
+    const handleDragEnd = async (event: DragEndEvent) => {
+        const { active, over } = event;
+        if (!over || active.id === over.id) return;
+
+        const oldIndex = assets.findIndex(a => a.id === active.id);
+        const newIndex = assets.findIndex(a => a.id === over.id);
+        const reordered = arrayMove(assets, oldIndex, newIndex);
+        setAssets(reordered);
+
+        try {
+            // Double-pass to avoid unique constraint collisions on `order`
+            for (let i = 0; i < reordered.length; i++) {
+                await instructorApi.updateAsset(reordered[i].id, { title: reordered[i].title, order: 1000 + i });
+            }
+            for (let i = 0; i < reordered.length; i++) {
+                await instructorApi.updateAsset(reordered[i].id, { title: reordered[i].title, order: i + 1 });
+            }
+            toast.success('Asset order saved ✓');
+        } catch {
+            toast.error('Failed to save asset order');
+            setAssets(initialAssets);
+        }
+    };
+
+    return (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={assets.map(a => a.id)} strategy={verticalListSortingStrategy}>
+                <div className="space-y-2">
+                    {assets.map(asset => (
+                        <SortableAsset
+                            key={asset.id}
+                            asset={asset}
+                            onDelete={onDelete}
+                            onRename={onRename}
+                        />
+                    ))}
+                </div>
+            </SortableContext>
+        </DndContext>
     );
 }
 
@@ -641,40 +782,15 @@ export default function PartEditorPage() {
                     <CardTitle>{t('assets')} ({part.assets?.length || 0})</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <div className="space-y-2">
-                        {part.assets?.map((asset: any) => (
-                            <div key={asset.id}
-                                className="flex items-center justify-between p-3 border rounded-lg bg-card group">
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-muted rounded">
-                                        {asset.type === 'VIDEO'
-                                            ? <Video className="h-4 w-4" />
-                                            : <FileText className="h-4 w-4 text-blue-500" />}
-                                    </div>
-                                    <div>
-                                        <div className="font-medium">{asset.title}</div>
-                                        <div className="text-xs text-muted-foreground">{asset.type}</div>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                    {/* Rename asset */}
-                                    <Button variant="ghost" size="icon"
-                                        className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
-                                        onClick={() => setRenameAsset({ id: asset.id, title: asset.title })}>
-                                        <Pencil className="h-4 w-4 text-muted-foreground" />
-                                    </Button>
-                                    {/* Delete asset */}
-                                    <Button variant="ghost" size="icon"
-                                        onClick={() => handleDeleteAsset(asset.id)}>
-                                        <Trash className="h-4 w-4 text-destructive" />
-                                    </Button>
-                                </div>
-                            </div>
-                        ))}
-                        {part.assets?.length === 0 && (
-                            <p className="text-muted-foreground text-center py-4">No media assets uploaded.</p>
-                        )}
-                    </div>
+                    {(part.assets?.length ?? 0) > 0 ? (
+                        <SortableAssetList
+                            assets={part.assets}
+                            onDelete={handleDeleteAsset}
+                            onRename={setRenameAsset}
+                        />
+                    ) : (
+                        <p className="text-muted-foreground text-center py-4">No media assets uploaded.</p>
+                    )}
                 </CardContent>
             </Card>
 

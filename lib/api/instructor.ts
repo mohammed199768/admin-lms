@@ -77,6 +77,7 @@ export interface PartAsset {
     id: string;
     title: string;
     type: 'VIDEO' | 'PDF' | 'QUIZ' | 'PPTX';
+    order: number;
     bunnyVideoId?: string;
     storageKey?: string;
     quizId?: string;
