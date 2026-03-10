@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { instructorApi, type Lecture } from '@/lib/api/instructor';
 import { toast } from 'sonner';
-import { Loader2, Plus, GripVertical, FileText, Trash, ArrowRight, Video, Pencil } from 'lucide-react';
+import { Loader2, Plus, GripVertical, FileText, Trash, ArrowRight, Video, Pencil, ChevronUp, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
@@ -96,6 +96,10 @@ function SortableLecture({
     onAddPart,
     onAddSubPart,
     onRename,
+    onMoveUp,
+    onMoveDown,
+    isFirst,
+    isLast,
 }: {
     lecture: Lecture;
     courseId: string;
@@ -103,6 +107,10 @@ function SortableLecture({
     onAddPart: (lectureId: string) => void;
     onAddSubPart: (parentPartId: string, lectureId: string) => void;
     onRename: (id: string, title: string) => Promise<void>;
+    onMoveUp: () => void;
+    onMoveDown: () => void;
+    isFirst: boolean;
+    isLast: boolean;
 }) {
     const t = useTranslations('admin.curriculum');
     const [renameOpen, setRenameOpen] = useState(false);
@@ -120,14 +128,26 @@ function SortableLecture({
         <div ref={setNodeRef} style={style}>
             <AccordionItem value={lecture.id} className="border rounded-lg bg-card px-4">
                 <div className="flex items-center justify-between py-2">
-                    <div className="flex items-center gap-2 flex-1">
+                    <div className="flex items-center gap-1 flex-1">
+                        {/* Drag handle — hidden on mobile */}
                         <div
                             {...attributes}
                             {...listeners}
-                            className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-muted"
+                            className="hidden sm:flex cursor-grab active:cursor-grabbing p-1 rounded hover:bg-muted shrink-0"
                             onClick={e => e.stopPropagation()}
                         >
                             <GripVertical className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        {/* Up/Down buttons */}
+                        <div className="flex flex-col gap-0.5 shrink-0">
+                            <Button variant="ghost" size="icon" className="h-5 w-5" disabled={isFirst}
+                                onClick={e => { e.stopPropagation(); onMoveUp(); }}>
+                                <ChevronUp className="h-3 w-3" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-5 w-5" disabled={isLast}
+                                onClick={e => { e.stopPropagation(); onMoveDown(); }}>
+                                <ChevronDown className="h-3 w-3" />
+                            </Button>
                         </div>
                         <AccordionTrigger className="hover:no-underline py-2 font-semibold text-lg">
                             {lecture.title}
@@ -197,33 +217,41 @@ function SortablePartsList({
         useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
     );
 
+    const savePartOrder = async (reordered: typeof parts, fallback: typeof parts) => {
+        try {
+            for (let i = 0; i < reordered.length; i++)
+                await instructorApi.updatePart(reordered[i].id, { title: reordered[i].title, order: 1000 + i });
+            for (let i = 0; i < reordered.length; i++)
+                await instructorApi.updatePart(reordered[i].id, { title: reordered[i].title, order: i + 1 });
+            toast.success('Part order saved ✓');
+        } catch {
+            toast.error('Failed to save part order');
+            setParts(fallback);
+        }
+    };
+
     const handleDragEnd = async (event: DragEndEvent) => {
         const { active, over } = event;
         if (!over || active.id === over.id) return;
-
         const oldIndex = parts.findIndex(p => p.id === active.id);
         const newIndex = parts.findIndex(p => p.id === over.id);
         const reordered = arrayMove(parts, oldIndex, newIndex);
         setParts(reordered);
+        await savePartOrder(reordered, parts);
+    };
 
-        try {
-            for (let i = 0; i < reordered.length; i++) {
-                await instructorApi.updatePart(reordered[i].id, { title: reordered[i].title, order: 1000 + i });
-            }
-            for (let i = 0; i < reordered.length; i++) {
-                await instructorApi.updatePart(reordered[i].id, { title: reordered[i].title, order: i + 1 });
-            }
-            toast.success('Part order saved ✓');
-        } catch {
-            toast.error('Failed to save part order');
-            setParts(lecture.parts || []);
-        }
+    const handleMovePart = async (index: number, direction: 'up' | 'down') => {
+        const newIndex = direction === 'up' ? index - 1 : index + 1;
+        if (newIndex < 0 || newIndex >= parts.length) return;
+        const reordered = arrayMove([...parts], index, newIndex);
+        setParts(reordered);
+        await savePartOrder(reordered, parts);
     };
 
     return (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={parts.map(p => p.id)} strategy={verticalListSortingStrategy}>
-                {parts.map(part => (
+                {parts.map((part, index) => (
                     <SortablePart
                         key={part.id}
                         part={part}
@@ -234,6 +262,10 @@ function SortablePartsList({
                         onLocalRename={(id, newTitle) => {
                             setParts(prev => prev.map(p => p.id === id ? { ...p, title: newTitle } : p));
                         }}
+                        onMoveUp={() => handleMovePart(index, 'up')}
+                        onMoveDown={() => handleMovePart(index, 'down')}
+                        isFirst={index === 0}
+                        isLast={index === parts.length - 1}
                     />
                 ))}
             </SortableContext>
@@ -250,6 +282,10 @@ function SortablePart({
     onAddSubPart,
     onRename,
     onLocalRename,
+    onMoveUp,
+    onMoveDown,
+    isFirst,
+    isLast,
 }: {
     part: Lecture['parts'][0];
     lectureId: string;
@@ -257,6 +293,10 @@ function SortablePart({
     onAddSubPart: (parentPartId: string, lectureId: string) => void;
     onRename: (id: string, title: string) => Promise<void>;
     onLocalRename: (id: string, title: string) => void;
+    onMoveUp: () => void;
+    onMoveDown: () => void;
+    isFirst: boolean;
+    isLast: boolean;
 }) {
     const router = useRouter();
     const [renameOpen, setRenameOpen] = useState(false);
@@ -276,32 +316,43 @@ function SortablePart({
 
     return (
         <div ref={setNodeRef} style={style}>
-            <div className="flex items-center justify-between p-3 rounded-md bg-muted/40 hover:bg-muted ml-6 transition-colors group">
+            <div className="flex items-center gap-1 p-3 rounded-md bg-muted/40 hover:bg-muted ml-6 transition-colors group">
+                {/* Drag handle — hidden on mobile */}
                 <div
                     {...attributes}
                     {...listeners}
-                    className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-background mr-1"
+                    className="hidden sm:flex cursor-grab active:cursor-grabbing p-1 rounded hover:bg-background mr-1 shrink-0"
                     onClick={e => e.stopPropagation()}
                 >
                     <GripVertical className="h-4 w-4 text-muted-foreground" />
                 </div>
 
+                {/* Up/Down buttons */}
+                <div className="flex flex-col gap-0.5 shrink-0">
+                    <Button variant="ghost" size="icon" className="h-5 w-5" disabled={isFirst} onClick={onMoveUp}>
+                        <ChevronUp className="h-3 w-3" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-5 w-5" disabled={isLast} onClick={onMoveDown}>
+                        <ChevronDown className="h-3 w-3" />
+                    </Button>
+                </div>
+
                 <div
-                    className="flex items-center gap-3 flex-1 cursor-pointer"
+                    className="flex items-center gap-3 flex-1 cursor-pointer min-w-0"
                     onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${part.id}`)}
                 >
-                    <div className="p-2 bg-background rounded-full border">
+                    <div className="p-2 bg-background rounded-full border shrink-0">
                         {isVideo ? <Video className="h-4 w-4 text-purple-500" /> :
                             isPdf ? <FileText className="h-4 w-4 text-blue-500" /> :
                                 <FileText className="h-4 w-4 text-muted-foreground" />}
                     </div>
-                    <div>
-                        <div className="font-medium group-hover:text-primary transition-colors">{part.title}</div>
+                    <div className="min-w-0">
+                        <div className="font-medium group-hover:text-primary transition-colors truncate">{part.title}</div>
                         <div className="text-xs text-muted-foreground">{part.assets?.length || 0} assets</div>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 shrink-0">
                     <Button variant="ghost" size="sm" onClick={e => { e.stopPropagation(); setRenameOpen(true); }}>
                         <Pencil className="h-4 w-4 text-muted-foreground" />
                     </Button>
@@ -313,18 +364,18 @@ function SortablePart({
 
             {/* Sub-parts */}
             {part.subParts?.map(sub => (
-                <div key={sub.id} className="flex items-center justify-between p-2 rounded-md bg-muted/20 hover:bg-muted ml-12 mt-1 group">
+                <div key={sub.id} className="flex items-center justify-between p-2 rounded-md bg-muted/20 hover:bg-muted ml-12 mt-1">
                     <div
-                        className="flex items-center gap-2 flex-1 cursor-pointer"
+                        className="flex items-center gap-2 flex-1 cursor-pointer min-w-0"
                         onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${sub.id}`)}
                     >
-                        <FileText className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-sm">{sub.title}</span>
+                        <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
+                        <span className="text-sm truncate">{sub.title}</span>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 shrink-0">
                         <Button
                             variant="ghost" size="icon"
-                            className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                            className="h-6 w-6"
                             onClick={e => { e.stopPropagation(); setSubRenameId(sub.id); setSubRenameTitle(sub.title); }}
                         >
                             <Pencil className="h-3 w-3 text-muted-foreground" />
@@ -426,28 +477,36 @@ export default function CurriculumPage() {
         }
     }, [lectures]);
 
-    // ── Drag end for Lectures ─────────────────────────────────────────────────
+    // ── Drag end for Lectures ──────────────────────────────────────────────────
+    const saveLectureOrder = async (reordered: typeof lectures, fallback: typeof lectures) => {
+        try {
+            for (let i = 0; i < reordered.length; i++)
+                await instructorApi.updateLecture(reordered[i].id, { title: reordered[i].title, order: 1000 + i });
+            for (let i = 0; i < reordered.length; i++)
+                await instructorApi.updateLecture(reordered[i].id, { title: reordered[i].title, order: i + 1 });
+            toast.success('Lecture order saved ✓');
+        } catch {
+            toast.error('Failed to save lecture order');
+            setLectures(fallback);
+        }
+    };
+
     const handleLectureDragEnd = async (event: DragEndEvent) => {
         const { active, over } = event;
         if (!over || active.id === over.id) return;
-
         const oldIndex = lectures.findIndex(l => l.id === active.id);
         const newIndex = lectures.findIndex(l => l.id === over.id);
         const reordered = arrayMove(lectures, oldIndex, newIndex);
         setLectures(reordered);
+        await saveLectureOrder(reordered, lectures);
+    };
 
-        try {
-            for (let i = 0; i < reordered.length; i++) {
-                await instructorApi.updateLecture(reordered[i].id, { title: reordered[i].title, order: 1000 + i });
-            }
-            for (let i = 0; i < reordered.length; i++) {
-                await instructorApi.updateLecture(reordered[i].id, { title: reordered[i].title, order: i + 1 });
-            }
-            toast.success('Lecture order saved ✓');
-        } catch {
-            toast.error('Failed to save lecture order');
-            fetchContent();
-        }
+    const handleMoveLecture = async (index: number, direction: 'up' | 'down') => {
+        const newIndex = direction === 'up' ? index - 1 : index + 1;
+        if (newIndex < 0 || newIndex >= lectures.length) return;
+        const reordered = arrayMove([...lectures], index, newIndex);
+        setLectures(reordered);
+        await saveLectureOrder(reordered, lectures);
     };
 
     const handleCreateLecture = async () => {
@@ -538,7 +597,7 @@ export default function CurriculumPage() {
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleLectureDragEnd}>
                     <SortableContext items={lectures.map(l => l.id)} strategy={verticalListSortingStrategy}>
                         <Accordion type="multiple" className="w-full space-y-4" defaultValue={lectures.map(s => s.id)}>
-                            {lectures.map(lecture => (
+                            {lectures.map((lecture, index) => (
                                 <SortableLecture
                                     key={lecture.id}
                                     lecture={lecture}
@@ -547,6 +606,10 @@ export default function CurriculumPage() {
                                     onAddPart={handleQuickAddPart}
                                     onAddSubPart={handleQuickAddSubPart}
                                     onRename={handleRename}
+                                    onMoveUp={() => handleMoveLecture(index, 'up')}
+                                    onMoveDown={() => handleMoveLecture(index, 'down')}
+                                    isFirst={index === 0}
+                                    isLast={index === lectures.length - 1}
                                 />
                             ))}
                         </Accordion>

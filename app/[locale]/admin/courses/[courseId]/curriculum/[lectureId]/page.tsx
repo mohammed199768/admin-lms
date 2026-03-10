@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { instructorApi, type Part, type PartAsset } from '@/lib/api/instructor';
 import { toast } from 'sonner';
-import { Loader2, ChevronLeft, Video, FileText, Trash, Plus, ArrowRight, FolderUp, Pencil, GripVertical } from 'lucide-react';
+import { Loader2, ChevronLeft, Video, FileText, Trash, Plus, ArrowRight, FolderUp, Pencil, GripVertical, ChevronUp, ChevronDown } from 'lucide-react';
 import {
     DndContext,
     closestCenter,
@@ -100,10 +100,18 @@ function SortableAsset({
     asset,
     onDelete,
     onRename,
+    onMoveUp,
+    onMoveDown,
+    isFirst,
+    isLast,
 }: {
     asset: import('@/lib/api/instructor').PartAsset;
     onDelete: (id: string) => void;
     onRename: (asset: { id: string; title: string }) => void;
+    onMoveUp: () => void;
+    onMoveDown: () => void;
+    isFirst: boolean;
+    isLast: boolean;
 }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: asset.id });
 
@@ -116,36 +124,47 @@ function SortableAsset({
 
     return (
         <div ref={setNodeRef} style={style}
-            className="flex items-center justify-between p-3 border rounded-lg bg-card group">
-            <div className="flex items-center gap-3 flex-1">
-                {/* Drag handle */}
-                <div
-                    {...attributes}
-                    {...listeners}
-                    className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-muted"
-                    onClick={e => e.stopPropagation()}
-                >
-                    <GripVertical className="h-4 w-4 text-muted-foreground" />
-                </div>
-                <div className="p-2 bg-muted rounded">
-                    {asset.type === 'VIDEO'
-                        ? <Video className="h-4 w-4" />
-                        : <FileText className="h-4 w-4 text-blue-500" />}
-                </div>
-                <div>
-                    <div className="font-medium">{asset.title}</div>
-                    <div className="text-xs text-muted-foreground">{asset.type}</div>
-                </div>
+            className="flex items-center gap-2 p-3 border rounded-lg bg-card group">
+            {/* Drag handle — hidden on mobile */}
+            <div
+                {...attributes}
+                {...listeners}
+                className="hidden sm:flex cursor-grab active:cursor-grabbing p-1 rounded hover:bg-muted shrink-0"
+                onClick={e => e.stopPropagation()}
+            >
+                <GripVertical className="h-4 w-4 text-muted-foreground" />
             </div>
-            <div className="flex items-center gap-1">
-                {/* Rename asset */}
-                <Button variant="ghost" size="icon"
-                    className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+
+            {/* Up/Down buttons — always visible */}
+            <div className="flex flex-col gap-0.5 shrink-0">
+                <Button variant="ghost" size="icon" className="h-6 w-6" disabled={isFirst} onClick={onMoveUp}>
+                    <ChevronUp className="h-3.5 w-3.5" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-6 w-6" disabled={isLast} onClick={onMoveDown}>
+                    <ChevronDown className="h-3.5 w-3.5" />
+                </Button>
+            </div>
+
+            {/* Icon */}
+            <div className="p-2 bg-muted rounded shrink-0">
+                {asset.type === 'VIDEO'
+                    ? <Video className="h-4 w-4" />
+                    : <FileText className="h-4 w-4 text-blue-500" />}
+            </div>
+
+            {/* Title */}
+            <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">{asset.title}</div>
+                <div className="text-xs text-muted-foreground">{asset.type}</div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-1 shrink-0">
+                <Button variant="ghost" size="icon" className="h-8 w-8"
                     onClick={() => onRename({ id: asset.id, title: asset.title })}>
                     <Pencil className="h-4 w-4 text-muted-foreground" />
                 </Button>
-                {/* Delete asset */}
-                <Button variant="ghost" size="icon"
+                <Button variant="ghost" size="icon" className="h-8 w-8"
                     onClick={() => onDelete(asset.id)}>
                     <Trash className="h-4 w-4 text-destructive" />
                 </Button>
@@ -177,40 +196,54 @@ function SortableAssetList({
         useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
     );
 
+    // ── Shared save logic ────────────────────────────────────────────────────
+    const saveOrder = async (reordered: typeof assets, fallback: typeof assets) => {
+        try {
+            for (let i = 0; i < reordered.length; i++)
+                await instructorApi.updateAsset(reordered[i].id, { title: reordered[i].title, order: 1000 + i });
+            for (let i = 0; i < reordered.length; i++)
+                await instructorApi.updateAsset(reordered[i].id, { title: reordered[i].title, order: i + 1 });
+            toast.success('Asset order saved ✓');
+        } catch {
+            toast.error('Failed to save asset order');
+            setAssets(fallback);
+        }
+    };
+
+    // ── Drag end ─────────────────────────────────────────────────────────────
     const handleDragEnd = async (event: DragEndEvent) => {
         const { active, over } = event;
         if (!over || active.id === over.id) return;
-
         const oldIndex = assets.findIndex(a => a.id === active.id);
         const newIndex = assets.findIndex(a => a.id === over.id);
         const reordered = arrayMove(assets, oldIndex, newIndex);
         setAssets(reordered);
+        await saveOrder(reordered, assets);
+    };
 
-        try {
-            // Double-pass to avoid unique constraint collisions on `order`
-            for (let i = 0; i < reordered.length; i++) {
-                await instructorApi.updateAsset(reordered[i].id, { title: reordered[i].title, order: 1000 + i });
-            }
-            for (let i = 0; i < reordered.length; i++) {
-                await instructorApi.updateAsset(reordered[i].id, { title: reordered[i].title, order: i + 1 });
-            }
-            toast.success('Asset order saved ✓');
-        } catch {
-            toast.error('Failed to save asset order');
-            setAssets(initialAssets);
-        }
+    // ── Up / Down buttons ────────────────────────────────────────────────────
+    const handleMove = async (index: number, direction: 'up' | 'down') => {
+        const newIndex = direction === 'up' ? index - 1 : index + 1;
+        if (newIndex < 0 || newIndex >= assets.length) return;
+        const reordered = arrayMove([...assets], index, newIndex);
+        setAssets(reordered);
+        await saveOrder(reordered, assets);
     };
 
     return (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={assets.map(a => a.id)} strategy={verticalListSortingStrategy}>
                 <div className="space-y-2">
-                    {assets.map(asset => (
+                    {assets.map((asset, index) => (
                         <SortableAsset
                             key={asset.id}
                             asset={asset}
                             onDelete={onDelete}
                             onRename={onRename}
+                            onMoveUp={() => handleMove(index, 'up')}
+                            onMoveDown={() => handleMove(index, 'down')}
+                            isFirst={index === 0}
+                            isLast={index === assets.length - 1}
                         />
                     ))}
                 </div>
