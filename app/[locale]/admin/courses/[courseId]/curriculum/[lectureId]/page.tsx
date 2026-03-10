@@ -10,6 +10,7 @@ import {
     closestCenter,
     KeyboardSensor,
     PointerSensor,
+    TouchSensor,
     useSensor,
     useSensors,
     DragEndEvent,
@@ -172,6 +173,7 @@ function SortableAssetList({
 
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+        useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
         useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
     );
 
@@ -693,12 +695,12 @@ export default function PartEditorPage() {
 
             {/* Sub-Parts Section */}
             <Card>
-                <CardHeader className="flex flex-row items-center justify-between">
+                <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div>
                         <CardTitle>Sub-Parts ({part.subParts?.length || 0})</CardTitle>
                         <CardDescription>أجزاء فرعية - اضغط على أي جزء لإضافة محتوى له</CardDescription>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                         <input type="file" className="hidden" id="folder-import"
                             {...{ webkitdirectory: '', directory: '' } as any}
                             onChange={(e) => { handleFolderImport(e.target.files); e.target.value = ''; }}
@@ -725,23 +727,23 @@ export default function PartEditorPage() {
                     <div className="space-y-2">
                         {part.subParts?.map((sub: any) => (
                             <div key={sub.id}
-                                className="flex items-center justify-between p-3 border rounded-lg bg-card hover:bg-muted/50 transition-colors group">
+                                className="flex items-center justify-between p-3 border rounded-lg bg-card hover:bg-muted/50 transition-colors">
                                 <div
-                                    className="flex items-center gap-3 flex-1 cursor-pointer"
+                                    className="flex items-center gap-3 flex-1 cursor-pointer min-w-0"
                                     onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${sub.id}`)}
                                 >
-                                    <div className="p-2 bg-muted rounded">
+                                    <div className="p-2 bg-muted rounded shrink-0">
                                         <FileText className="h-4 w-4 text-muted-foreground" />
                                     </div>
-                                    <div>
-                                        <div className="font-medium group-hover:text-primary transition-colors">{sub.title}</div>
+                                    <div className="min-w-0">
+                                        <div className="font-medium truncate">{sub.title}</div>
                                         <div className="text-xs text-muted-foreground">{sub.assets?.length || 0} assets</div>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-1 shrink-0 ml-2">
                                     {/* Rename sub-part */}
                                     <Button variant="ghost" size="icon"
-                                        className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        className="h-8 w-8"
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             setRenameSubPart({ id: sub.id, title: sub.title, order: sub.order });
@@ -750,7 +752,7 @@ export default function PartEditorPage() {
                                     </Button>
                                     {/* Delete sub-part */}
                                     <Button variant="ghost" size="icon"
-                                        className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        className="h-8 w-8"
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             if (confirm('Delete this sub-part?')) {
@@ -762,7 +764,7 @@ export default function PartEditorPage() {
                                         }}>
                                         <Trash className="h-3 w-3 text-destructive" />
                                     </Button>
-                                    <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors cursor-pointer"
+                                    <ArrowRight className="h-4 w-4 text-muted-foreground cursor-pointer"
                                         onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${sub.id}`)} />
                                 </div>
                             </div>
