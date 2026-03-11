@@ -93,6 +93,7 @@ export interface Part {
     order: number;
     assets: PartAsset[];
     subParts?: Part[];
+    isLectureAssetContainer?: boolean;
 }
 
 export interface Lecture {
@@ -100,6 +101,8 @@ export interface Lecture {
     title: string;
     order: number;
     parts: Part[];
+    assets?: PartAsset[];
+    assetContainerPartId?: string;
 }
 
 export interface CourseContent {
@@ -313,6 +316,10 @@ export const instructorApi = {
 
     deleteLecture: async (lectureId: string): Promise<void> => {
         return apiClient.delete(`/instructor/sections/${lectureId}`);
+    },
+
+    ensureLectureAssetContainer: async (lectureId: string): Promise<Part> => {
+        return apiClient.post<Part>(`/instructor/sections/${lectureId}/asset-container`, {});
     },
 
     createPart: async (lectureId: string, data: { title: string; order: number }): Promise<Part> => {

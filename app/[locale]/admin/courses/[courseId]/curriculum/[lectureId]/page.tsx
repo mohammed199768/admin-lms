@@ -856,23 +856,29 @@ export default function PartEditorPage() {
             </div>
 
             <div className="grid gap-6 md:grid-cols-3">
-                <Card className="md:col-span-2">
-                    <CardHeader><CardTitle>{t('partTitle')}</CardTitle></CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="grid gap-2">
-                            <Label>{t('partTitle')}</Label>
-                            <div className="flex gap-2">
-                                <Input value={title} onChange={e => setTitle(e.target.value)} />
-                                <Button onClick={handleSaveTitle}>Save</Button>
+                {!part.isLectureAssetContainer && (
+                    <Card className="md:col-span-2">
+                        <CardHeader><CardTitle>{t('partTitle')}</CardTitle></CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="grid gap-2">
+                                <Label>{t('partTitle')}</Label>
+                                <div className="flex gap-2">
+                                    <Input value={title} onChange={e => setTitle(e.target.value)} />
+                                    <Button onClick={handleSaveTitle}>Save</Button>
+                                </div>
                             </div>
-                        </div>
-                    </CardContent>
-                </Card>
+                        </CardContent>
+                    </Card>
+                )}
 
                 <Card className="md:col-span-1">
                     <CardHeader>
-                        <CardTitle>Media</CardTitle>
-                        <CardDescription>Upload Video or PDF resources.</CardDescription>
+                        <CardTitle>{part.isLectureAssetContainer ? 'Lecture Assets' : 'Media'}</CardTitle>
+                        <CardDescription>
+                            {part.isLectureAssetContainer
+                                ? 'Upload files and videos directly under this lecture.'
+                                : 'Upload Video or PDF resources.'}
+                        </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div className="grid gap-2">
@@ -957,7 +963,7 @@ export default function PartEditorPage() {
             </div>
 
             {/* Sub-Parts Section */}
-            <Card>
+            {!part.isLectureAssetContainer && <Card>
                 <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div>
                         <CardTitle>Sub-Parts ({part.subParts?.length || 0})</CardTitle>
@@ -1039,7 +1045,7 @@ export default function PartEditorPage() {
                         )}
                     </div>
                 </CardContent>
-            </Card>
+            </Card>}
 
             {/* Assets Section */}
             <Card>

@@ -164,6 +164,7 @@ function SortableLecture({
     lectures,
     courseId,
     onDelete,
+    onOpenLectureAssets,
     onAddPart,
     onAddSubPart,
     onRename,
@@ -177,6 +178,7 @@ function SortableLecture({
     lectures: Lecture[];
     courseId: string;
     onDelete: (id: string) => void;
+    onOpenLectureAssets: (lecture: Lecture) => Promise<void>;
     onAddPart: (lectureId: string) => void;
     onAddSubPart: (parentPartId: string, lectureId: string) => void;
     onRename: (id: string, title: string) => Promise<void>;
@@ -228,6 +230,17 @@ function SortableLecture({
                         </AccordionTrigger>
                     </div>
                     <div className="flex items-center gap-1">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={async (e) => {
+                                e.stopPropagation();
+                                await onOpenLectureAssets(lecture);
+                            }}
+                        >
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            <span className="ml-1 text-xs">{lecture.assets?.length || 0}</span>
+                        </Button>
                         <Button variant="ghost" size="sm" onClick={e => { e.stopPropagation(); setRenameOpen(true); }}>
                             <Pencil className="h-4 w-4 text-muted-foreground" />
                         </Button>
@@ -664,6 +677,17 @@ export default function CurriculumPage() {
         }
     };
 
+    const handleOpenLectureAssets = useCallback(async (lecture: Lecture) => {
+        try {
+            const containerPartId = lecture.assetContainerPartId
+                ? lecture.assetContainerPartId
+                : (await instructorApi.ensureLectureAssetContainer(lecture.id)).id;
+            router.push(`/admin/courses/${courseId}/curriculum/${containerPartId}`);
+        } catch {
+            toast.error('Failed to open lecture assets');
+        }
+    }, [courseId, router]);
+
     const handleMovePart = useCallback(async (partId: string, targetLectureId: string) => {
         const sourceLecture = lectures.find((lecture) => lecture.parts?.some((part) => part.id === partId));
         const movingPart = sourceLecture?.parts?.find((part) => part.id === partId);
@@ -674,16 +698,8 @@ export default function CurriculumPage() {
             return;
         }
 
-        const nextOrder = targetLecture.parts.length > 0
-            ? Math.max(...targetLecture.parts.map((part) => part.order)) + 1
-            : 1;
-
         try {
-            await instructorApi.updatePart(partId, {
-                title: movingPart.title,
-                order: nextOrder,
-                lectureId: targetLectureId
-            });
+            await instructorApi.updatePart(partId, { title: movingPart.title, lectureId: targetLectureId });
             await fetchContent();
         } catch {
             toast.error('Failed to move part');
@@ -732,6 +748,7 @@ export default function CurriculumPage() {
                                     lectures={lectures}
                                     courseId={courseId}
                                     onDelete={handleDeleteLecture}
+                                    onOpenLectureAssets={handleOpenLectureAssets}
                                     onAddPart={handleQuickAddPart}
                                     onAddSubPart={handleQuickAddSubPart}
                                     onRename={handleRename}
