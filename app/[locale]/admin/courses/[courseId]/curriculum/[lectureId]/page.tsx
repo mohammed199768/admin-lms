@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { instructorApi, type Lecture, type Part, type PartAsset } from '@/lib/api/instructor';
 import { toast } from 'sonner';
-import { Loader2, ChevronLeft, Video, FileText, Trash, Plus, ArrowRight, ArrowRightLeft, FolderUp, Pencil, GripVertical, ChevronUp, ChevronDown } from 'lucide-react';
+import { Loader2, ChevronLeft, Video, FileText, Trash, Plus, ArrowRight, ArrowRightLeft, FolderUp, Pencil, GripVertical, ChevronUp, ChevronDown, Eye } from 'lucide-react';
 import {
     DndContext,
     closestCenter,
@@ -33,6 +33,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DocumentViewer } from '@/components/common/document-viewer';
 import { useTranslations } from 'next-intl';
 
 const MAX_DOCUMENT_SIZE = 100 * 1024 * 1024; // 100MB
@@ -253,6 +254,119 @@ function MoveAssetDialog({
     );
 }
 
+function AssetPreviewDialog({
+    asset,
+    open,
+    onOpenChange,
+}: {
+    asset: PartAsset;
+    open: boolean;
+    onOpenChange: (v: boolean) => void;
+}) {
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [playback, setPlayback] = useState<Awaited<ReturnType<typeof instructorApi.getAssetPlayback>> | null>(null);
+    const [metadata, setMetadata] = useState<Awaited<ReturnType<typeof instructorApi.getAssetDocumentMetadata>> | null>(null);
+
+    useEffect(() => {
+        if (!open) return;
+
+        let cancelled = false;
+
+        const loadPreview = async () => {
+            setLoading(true);
+            setError(null);
+            setPlayback(null);
+            setMetadata(null);
+
+            try {
+                if (asset.type === 'VIDEO') {
+                    const data = await instructorApi.getAssetPlayback(asset.id);
+                    if (!cancelled) setPlayback(data);
+                } else if (asset.type === 'PDF' || asset.type === 'PPTX') {
+                    const data = await instructorApi.getAssetDocumentMetadata(asset.id);
+                    if (!cancelled) setMetadata(data);
+                } else {
+                    if (!cancelled) setError('Preview is not available for this asset type.');
+                }
+            } catch {
+                if (!cancelled) setError('Failed to load preview.');
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        };
+
+        void loadPreview();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [asset.id, asset.type, open]);
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="max-w-5xl">
+                <DialogHeader>
+                    <DialogTitle>Preview: {asset.title}</DialogTitle>
+                </DialogHeader>
+
+                <div className="min-h-[420px] overflow-hidden rounded-lg border bg-slate-950">
+                    {loading && (
+                        <div className="flex h-[420px] items-center justify-center text-white">
+                            <Loader2 className="h-8 w-8 animate-spin" />
+                        </div>
+                    )}
+
+                    {!loading && error && (
+                        <div className="flex h-[420px] items-center justify-center px-6 text-center text-sm text-red-400">
+                            {error}
+                        </div>
+                    )}
+
+                    {!loading && !error && playback?.isImage && playback.originalUrl && (
+                        <div className="flex h-[420px] items-center justify-center bg-slate-950 p-4">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={playback.originalUrl} alt={asset.title} className="max-h-full max-w-full object-contain" />
+                        </div>
+                    )}
+
+                    {!loading && !error && playback?.embedUrl && (
+                        <div className="aspect-video w-full bg-black">
+                            <iframe
+                                src={`${playback.embedUrl}${playback.embedUrl.includes('?') ? '&' : '?'}autoplay=false`}
+                                className="h-full w-full border-0"
+                                allow="accelerometer; gyroscope; autoplay; encrypted-media;"
+                                referrerPolicy="strict-origin-when-cross-origin"
+                            />
+                        </div>
+                    )}
+
+                    {!loading && !error && metadata && metadata.renderStatus === 'COMPLETED' && (
+                        <DocumentViewer
+                            lessonId={asset.id}
+                            pageCount={metadata.pageCount}
+                            title={metadata.displayName || metadata.title}
+                            className="h-[420px]"
+                        />
+                    )}
+
+                    {!loading && !error && metadata && metadata.renderStatus === 'FAILED' && (
+                        <div className="flex h-[420px] items-center justify-center px-6 text-center text-sm text-red-400">
+                            This document could not be processed for preview.
+                        </div>
+                    )}
+
+                    {!loading && !error && metadata && metadata.renderStatus !== 'COMPLETED' && metadata.renderStatus !== 'FAILED' && (
+                        <div className="flex h-[420px] items-center justify-center px-6 text-center text-sm text-slate-300">
+                            This document is still processing. Try again in a moment.
+                        </div>
+                    )}
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 // ─── Sortable Asset ──────────────────────────────────────────────────────────
 
 function SortableAsset({
@@ -279,6 +393,7 @@ function SortableAsset({
     isLast: boolean;
 }) {
     const [moveOpen, setMoveOpen] = useState(false);
+    const [previewOpen, setPreviewOpen] = useState(false);
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: asset.id });
 
     const style = {
@@ -327,6 +442,10 @@ function SortableAsset({
             {/* Actions */}
             <div className="flex items-center gap-1 shrink-0">
                 <Button variant="ghost" size="icon" className="h-8 w-8"
+                    onClick={() => setPreviewOpen(true)}>
+                    <Eye className="h-4 w-4 text-muted-foreground" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8"
                     onClick={() => onRename({ id: asset.id, title: asset.title })}>
                     <Pencil className="h-4 w-4 text-muted-foreground" />
                 </Button>
@@ -349,6 +468,12 @@ function SortableAsset({
                     await onMove(asset.id, targetPartId);
                     toast.success('Asset moved');
                 }}
+            />
+
+            <AssetPreviewDialog
+                asset={asset}
+                open={previewOpen}
+                onOpenChange={setPreviewOpen}
             />
         </div>
     );

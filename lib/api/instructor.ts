@@ -219,6 +219,23 @@ export interface UploadProgress {
     percentage: number;
 }
 
+export interface AssetPlayback {
+    type: 'VIDEO' | 'PDF' | 'PPTX' | 'QUIZ';
+    embedUrl?: string;
+    token?: string;
+    expires?: number;
+    isImage?: boolean;
+    originalUrl?: string;
+}
+
+export interface DocumentMetadata {
+    title: string;
+    displayName?: string;
+    pageCount: number;
+    renderStatus: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+    isSecure: boolean;
+}
+
 // ============================================================================
 // CHUNKED UPLOAD CONFIGURATION
 // ============================================================================
@@ -358,6 +375,14 @@ export const instructorApi = {
 
     deleteAsset: async (assetId: string): Promise<void> => {
         return apiClient.delete(`/instructor/assets/${assetId}`);
+    },
+
+    getAssetPlayback: async (assetId: string): Promise<AssetPlayback> => {
+        return apiClient.get<AssetPlayback>(`/courses/assets/${assetId}/play`);
+    },
+
+    getAssetDocumentMetadata: async (assetId: string): Promise<DocumentMetadata> => {
+        return apiClient.get<DocumentMetadata>(`/lessons/assets/${assetId}/document/metadata`);
     },
 
     // ========================================================================
