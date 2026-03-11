@@ -827,6 +827,20 @@ export default function PartEditorPage() {
         }
     };
 
+    const handleMoveAllAssetsToLecture = async () => {
+        if (!part || part.isLectureAssetContainer || (part.assets?.length ?? 0) === 0) return;
+        if (!confirm('Move all direct assets from this part into the lecture assets?')) return;
+
+        try {
+            const result = await instructorApi.moveAllAssetsToLecture(partId);
+            toast.success(`${result.movedCount} asset(s) moved to lecture`);
+            await Promise.all([fetchPart(), fetchCourseContent()]);
+            router.push(`/admin/courses/${courseId}/curriculum/${result.targetPartId}`);
+        } catch {
+            toast.error('Failed to move assets to lecture');
+        }
+    };
+
     const handleCreateSubPart = async () => {
         const subTitle = prompt('Sub-part title:');
         if (!subTitle) return;
@@ -1051,6 +1065,17 @@ export default function PartEditorPage() {
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
                     <CardTitle>{t('assets')} ({part.assets?.length || 0})</CardTitle>
+                    {!part.isLectureAssetContainer && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleMoveAllAssetsToLecture}
+                            disabled={(part.assets?.length ?? 0) === 0}
+                        >
+                            <ArrowRightLeft className="mr-2 h-4 w-4" />
+                            Move All To Lecture
+                        </Button>
+                    )}
                 </CardHeader>
                 <CardContent>
                     {(part.assets?.length ?? 0) > 0 ? (

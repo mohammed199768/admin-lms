@@ -341,6 +341,10 @@ export const instructorApi = {
         return apiClient.delete(`/instructor/lessons/${partId}`);
     },
 
+    moveAllAssetsToLecture: async (partId: string): Promise<{ movedCount: number; targetPartId: string }> => {
+        return apiClient.post(`/instructor/lessons/${partId}/move-assets-to-lecture`, {});
+    },
+
     createAsset: async (partId: string, data: CreateAssetInput): Promise<PartAsset> => {
         return apiClient.post<PartAsset>(`/instructor/lessons/${partId}/assets`, data);
     },
