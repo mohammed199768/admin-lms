@@ -189,8 +189,8 @@ function AssetNode({ asset, level = 0 }: { asset: PartAsset; level?: number }) {
 
     return (
         <div
-            className="ml-6 mt-1 flex items-center gap-2 rounded-md border border-dashed bg-background/60 px-3 py-2 text-sm"
-            style={{ marginLeft: `${24 + level * 24}px` }}
+            className="mt-1 flex items-center gap-2 rounded-md border border-dashed bg-background/70 px-3 py-2 text-sm shadow-sm"
+            style={{ marginLeft: `${12 + level * 24}px` }}
         >
             <div className="shrink-0">{icon}</div>
             <span className="truncate font-medium">{asset.title}</span>
@@ -214,7 +214,7 @@ function NestedPartNode({
     return (
         <div className="mt-1">
             <div
-                className="flex items-center justify-between rounded-md bg-muted/20 px-3 py-2 transition-colors hover:bg-muted"
+                className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2 transition-colors hover:bg-muted"
                 style={{ marginLeft: `${48 + level * 24}px` }}
             >
                 <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -237,13 +237,20 @@ function NestedPartNode({
                 </Button>
             </div>
 
-            {expanded && part.assets?.map((asset) => (
-                <AssetNode key={asset.id} asset={asset} level={level + 1} />
-            ))}
+            {expanded && (
+                <div
+                    className="ml-16 mt-1 border-l border-dashed border-muted-foreground/30 pl-3"
+                    style={{ marginLeft: `${64 + level * 24}px` }}
+                >
+                    {part.assets?.map((asset) => (
+                        <AssetNode key={asset.id} asset={asset} level={level + 1} />
+                    ))}
 
-            {expanded && part.subParts?.map((subPart) => (
-                <NestedPartNode key={subPart.id} part={subPart} courseId={courseId} level={level + 1} />
-            ))}
+                    {part.subParts?.map((subPart) => (
+                        <NestedPartNode key={subPart.id} part={subPart} courseId={courseId} level={level + 1} />
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
@@ -277,9 +284,13 @@ function LectureAssetFolder({
                 </Button>
             </div>
 
-            {expanded && lecture.assets?.map((asset) => (
-                <AssetNode key={asset.id} asset={asset} level={1} />
-            ))}
+            {expanded && (
+                <div className="ml-12 mt-1 border-l border-dashed border-amber-500/40 pl-3">
+                    {lecture.assets?.map((asset) => (
+                        <AssetNode key={asset.id} asset={asset} level={1} />
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
@@ -553,7 +564,7 @@ function SortablePart({
 
     return (
         <div ref={setNodeRef} style={style}>
-            <div className="flex items-center gap-1 p-3 rounded-md bg-muted/40 hover:bg-muted ml-6 transition-colors group">
+            <div className="flex items-center gap-1 rounded-md border bg-muted/30 px-3 py-2 ml-6 transition-colors group hover:bg-muted">
                 {/* Drag handle — hidden on mobile */}
                 <div
                     {...attributes}
@@ -617,13 +628,15 @@ function SortablePart({
                 </div>
             </div>
 
-            {expanded && part.assets?.map((asset) => (
-                <AssetNode key={asset.id} asset={asset} />
-            ))}
+            {expanded && (
+                <div className="ml-12 mt-1 border-l border-dashed border-muted-foreground/30 pl-3">
+                    {part.assets?.map((asset) => (
+                        <AssetNode key={asset.id} asset={asset} />
+                    ))}
 
-            {expanded && part.subParts?.map(sub => (
-                <div key={sub.id}>
-                    <div className="flex items-center justify-between p-2 rounded-md bg-muted/20 hover:bg-muted ml-12 mt-1">
+                    {part.subParts?.map(sub => (
+                        <div key={sub.id}>
+                            <div className="mt-1 flex items-center justify-between rounded-md border bg-muted/20 px-2 py-2 transition-colors hover:bg-muted">
                         <div className="flex items-center gap-2 flex-1 min-w-0">
                             <FolderOpen className="h-3.5 w-3.5 text-amber-500 shrink-0" />
                             <span className="text-sm truncate">{sub.title}</span>
@@ -640,17 +653,21 @@ function SortablePart({
                                 <ArrowRight className="h-3 w-3 text-muted-foreground" />
                             </Button>
                         </div>
-                    </div>
+                            </div>
 
-                    {sub.assets?.map((asset) => (
-                        <AssetNode key={asset.id} asset={asset} level={1} />
-                    ))}
+                            <div className="ml-8 mt-1 border-l border-dashed border-muted-foreground/30 pl-3">
+                                {sub.assets?.map((asset) => (
+                                    <AssetNode key={asset.id} asset={asset} level={1} />
+                                ))}
 
-                    {sub.subParts?.map((nestedSubPart) => (
-                        <NestedPartNode key={nestedSubPart.id} part={nestedSubPart} courseId={courseId} level={1} />
+                                {sub.subParts?.map((nestedSubPart) => (
+                                    <NestedPartNode key={nestedSubPart.id} part={nestedSubPart} courseId={courseId} level={1} />
+                                ))}
+                            </div>
+                        </div>
                     ))}
                 </div>
-            ))}
+            )}
 
             {/* Rename Part Dialog */}
             <RenameDialog
