@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { instructorApi, type Lecture } from '@/lib/api/instructor';
+import { instructorApi, type Lecture, type Part, type PartAsset } from '@/lib/api/instructor';
 import { toast } from 'sonner';
-import { Loader2, Plus, GripVertical, FileText, Trash, ArrowRight, ArrowRightLeft, Video, Pencil, ChevronUp, ChevronDown } from 'lucide-react';
+import { Loader2, Plus, GripVertical, FileText, Trash, ArrowRight, ArrowRightLeft, Video, Pencil, ChevronUp, ChevronDown, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
@@ -157,6 +157,102 @@ function MovePartDialog({
     );
 }
 
+function AssetNode({ asset, level = 0 }: { asset: PartAsset; level?: number }) {
+    const icon = asset.type === 'VIDEO'
+        ? <Video className="h-3.5 w-3.5 text-purple-500" />
+        : <FileText className="h-3.5 w-3.5 text-blue-500" />;
+
+    return (
+        <div
+            className="ml-6 mt-1 flex items-center gap-2 rounded-md border border-dashed bg-background/60 px-3 py-2 text-sm"
+            style={{ marginLeft: `${24 + level * 24}px` }}
+        >
+            <div className="shrink-0">{icon}</div>
+            <span className="truncate font-medium">{asset.title}</span>
+            <span className="ml-auto text-[11px] uppercase tracking-wide text-muted-foreground">{asset.type}</span>
+        </div>
+    );
+}
+
+function NestedPartNode({
+    part,
+    courseId,
+    level = 0,
+}: {
+    part: Part;
+    courseId: string;
+    level?: number;
+}) {
+    const router = useRouter();
+
+    return (
+        <div className="mt-1">
+            <div
+                className="flex items-center justify-between rounded-md bg-muted/20 px-3 py-2 transition-colors hover:bg-muted"
+                style={{ marginLeft: `${48 + level * 24}px` }}
+            >
+                <div
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-2"
+                    onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${part.id}`)}
+                >
+                    <FolderOpen className="h-4 w-4 shrink-0 text-amber-500" />
+                    <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">{part.title}</div>
+                        <div className="text-xs text-muted-foreground">{part.assets?.length || 0} assets</div>
+                    </div>
+                </div>
+                <ArrowRight
+                    className="h-4 w-4 shrink-0 cursor-pointer text-muted-foreground"
+                    onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${part.id}`)}
+                />
+            </div>
+
+            {part.assets?.map((asset) => (
+                <AssetNode key={asset.id} asset={asset} level={level + 1} />
+            ))}
+
+            {part.subParts?.map((subPart) => (
+                <NestedPartNode key={subPart.id} part={subPart} courseId={courseId} level={level + 1} />
+            ))}
+        </div>
+    );
+}
+
+function LectureAssetFolder({
+    lecture,
+    onOpen,
+}: {
+    lecture: Lecture;
+    onOpen: (lecture: Lecture) => Promise<void>;
+}) {
+    return (
+        <div className="mt-1">
+            <div
+                className="ml-6 flex items-center justify-between rounded-md border bg-amber-50/40 px-3 py-2 transition-colors hover:bg-amber-100/50 dark:bg-amber-950/20 dark:hover:bg-amber-950/30"
+            >
+                <div
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-2"
+                    onClick={() => void onOpen(lecture)}
+                >
+                    <FolderOpen className="h-4 w-4 shrink-0 text-amber-500" />
+                    <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">Lecture Assets</div>
+                        <div className="text-xs text-muted-foreground">{lecture.assets?.length || 0} assets</div>
+                    </div>
+                </div>
+                <ArrowRight
+                    className="h-4 w-4 shrink-0 cursor-pointer text-muted-foreground"
+                    onClick={() => void onOpen(lecture)}
+                />
+            </div>
+
+            {lecture.assets?.map((asset) => (
+                <AssetNode key={asset.id} asset={asset} level={1} />
+            ))}
+        </div>
+    );
+}
+
 // ─── Sortable Lecture Item ────────────────────────────────────────────────────
 
 function SortableLecture({
@@ -253,6 +349,7 @@ function SortableLecture({
                 </div>
 
                 <AccordionContent className="pt-2 pb-4 space-y-2">
+                    <LectureAssetFolder lecture={lecture} onOpen={onOpenLectureAssets} />
                     <SortablePartsList
                         lecture={lecture}
                         lectures={lectures}
@@ -483,29 +580,42 @@ function SortablePart({
                 </div>
             </div>
 
-            {/* Sub-parts */}
+            {part.assets?.map((asset) => (
+                <AssetNode key={asset.id} asset={asset} />
+            ))}
+
             {part.subParts?.map(sub => (
-                <div key={sub.id} className="flex items-center justify-between p-2 rounded-md bg-muted/20 hover:bg-muted ml-12 mt-1">
-                    <div
-                        className="flex items-center gap-2 flex-1 cursor-pointer min-w-0"
-                        onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${sub.id}`)}
-                    >
-                        <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
-                        <span className="text-sm truncate">{sub.title}</span>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                        <Button
-                            variant="ghost" size="icon"
-                            className="h-6 w-6"
-                            onClick={e => { e.stopPropagation(); setSubRenameId(sub.id); setSubRenameTitle(sub.title); }}
-                        >
-                            <Pencil className="h-3 w-3 text-muted-foreground" />
-                        </Button>
-                        <ArrowRight
-                            className="h-3 w-3 text-muted-foreground cursor-pointer"
+                <div key={sub.id}>
+                    <div className="flex items-center justify-between p-2 rounded-md bg-muted/20 hover:bg-muted ml-12 mt-1">
+                        <div
+                            className="flex items-center gap-2 flex-1 cursor-pointer min-w-0"
                             onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${sub.id}`)}
-                        />
+                        >
+                            <FolderOpen className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                            <span className="text-sm truncate">{sub.title}</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                            <Button
+                                variant="ghost" size="icon"
+                                className="h-6 w-6"
+                                onClick={e => { e.stopPropagation(); setSubRenameId(sub.id); setSubRenameTitle(sub.title); }}
+                            >
+                                <Pencil className="h-3 w-3 text-muted-foreground" />
+                            </Button>
+                            <ArrowRight
+                                className="h-3 w-3 text-muted-foreground cursor-pointer"
+                                onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${sub.id}`)}
+                            />
+                        </div>
                     </div>
+
+                    {sub.assets?.map((asset) => (
+                        <AssetNode key={asset.id} asset={asset} level={1} />
+                    ))}
+
+                    {sub.subParts?.map((nestedSubPart) => (
+                        <NestedPartNode key={nestedSubPart.id} part={nestedSubPart} courseId={courseId} level={1} />
+                    ))}
                 </div>
             ))}
 
