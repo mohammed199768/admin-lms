@@ -168,6 +168,7 @@ function SortableLecture({
     onAddPart,
     onAddSubPart,
     onRename,
+    onDeletePart,
     onMovePart,
     onMoveUp,
     onMoveDown,
@@ -182,6 +183,7 @@ function SortableLecture({
     onAddPart: (lectureId: string) => void;
     onAddSubPart: (parentPartId: string, lectureId: string) => void;
     onRename: (id: string, title: string) => Promise<void>;
+    onDeletePart: (partId: string) => Promise<void>;
     onMovePart: (partId: string, targetLectureId: string) => Promise<void>;
     onMoveUp: () => void;
     onMoveDown: () => void;
@@ -257,6 +259,7 @@ function SortableLecture({
                         courseId={courseId}
                         onAddSubPart={onAddSubPart}
                         onRenamePart={onRename}
+                        onDeletePart={onDeletePart}
                         onMovePart={onMovePart}
                     />
                     <div className="flex gap-2 ml-6 mt-2">
@@ -289,6 +292,7 @@ function SortablePartsList({
     courseId,
     onAddSubPart,
     onRenamePart,
+    onDeletePart,
     onMovePart,
 }: {
     lecture: Lecture;
@@ -296,6 +300,7 @@ function SortablePartsList({
     courseId: string;
     onAddSubPart: (parentPartId: string, lectureId: string) => void;
     onRenamePart: (id: string, title: string) => Promise<void>;
+    onDeletePart: (partId: string) => Promise<void>;
     onMovePart: (partId: string, targetLectureId: string) => Promise<void>;
 }) {
     const [parts, setParts] = useState(lecture.parts || []);
@@ -353,6 +358,7 @@ function SortablePartsList({
                         courseId={courseId}
                         onAddSubPart={onAddSubPart}
                         onRename={onRenamePart}
+                        onDelete={onDeletePart}
                         onMove={onMovePart}
                         onLocalRename={(id, newTitle) => {
                             setParts(prev => prev.map(p => p.id === id ? { ...p, title: newTitle } : p));
@@ -377,6 +383,7 @@ function SortablePart({
     courseId,
     onAddSubPart,
     onRename,
+    onDelete,
     onMove,
     onLocalRename,
     onMoveUp,
@@ -390,6 +397,7 @@ function SortablePart({
     courseId: string;
     onAddSubPart: (parentPartId: string, lectureId: string) => void;
     onRename: (id: string, title: string) => Promise<void>;
+    onDelete: (partId: string) => Promise<void>;
     onMove: (partId: string, targetLectureId: string) => Promise<void>;
     onLocalRename: (id: string, title: string) => void;
     onMoveUp: () => void;
@@ -458,6 +466,16 @@ function SortablePart({
                     </Button>
                     <Button variant="ghost" size="sm" onClick={e => { e.stopPropagation(); setMoveOpen(true); }}>
                         <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={async (e) => {
+                            e.stopPropagation();
+                            await onDelete(part.id);
+                        }}
+                    >
+                        <Trash className="h-4 w-4 text-destructive" />
                     </Button>
                     <Button variant="ghost" size="sm" onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${part.id}`)}>
                         <ArrowRight className="h-4 w-4 text-muted-foreground" />
@@ -677,6 +695,17 @@ export default function CurriculumPage() {
         }
     };
 
+    const handleDeletePart = useCallback(async (partId: string) => {
+        if (!confirm('Delete this part?')) return;
+        try {
+            await instructorApi.deletePart(partId);
+            toast.success('Part deleted');
+            await fetchContent();
+        } catch {
+            toast.error('Failed to delete part');
+        }
+    }, [fetchContent]);
+
     const handleOpenLectureAssets = useCallback(async (lecture: Lecture) => {
         try {
             const containerPartId = lecture.assetContainerPartId
@@ -752,6 +781,7 @@ export default function CurriculumPage() {
                                     onAddPart={handleQuickAddPart}
                                     onAddSubPart={handleQuickAddSubPart}
                                     onRename={handleRename}
+                                    onDeletePart={handleDeletePart}
                                     onMovePart={handleMovePart}
                                     onMoveUp={() => handleMoveLecture(index, 'up')}
                                     onMoveDown={() => handleMoveLecture(index, 'down')}

@@ -841,6 +841,19 @@ export default function PartEditorPage() {
         }
     };
 
+    const handleDeletePart = async () => {
+        if (!part || part.isLectureAssetContainer) return;
+        if (!confirm('Delete this part?')) return;
+
+        try {
+            await instructorApi.deletePart(part.id);
+            toast.success('Part deleted');
+            router.push(`/admin/courses/${courseId}/curriculum`);
+        } catch {
+            toast.error('Failed to delete part');
+        }
+    };
+
     const handleCreateSubPart = async () => {
         const subTitle = prompt('Sub-part title:');
         if (!subTitle) return;
@@ -867,6 +880,12 @@ export default function PartEditorPage() {
                     <h1 className="text-2xl font-bold tracking-tight">{t('editPart')}</h1>
                     <p className="text-muted-foreground">{part.title}</p>
                 </div>
+                {!part.isLectureAssetContainer && (
+                    <Button variant="destructive" size="sm" className="ml-auto" onClick={handleDeletePart}>
+                        <Trash className="mr-2 h-4 w-4" />
+                        Delete Part
+                    </Button>
+                )}
             </div>
 
             <div className="grid gap-6 md:grid-cols-3">
