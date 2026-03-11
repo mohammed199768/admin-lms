@@ -30,6 +30,91 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
+type SelectedNodeType = 'lecture' | 'lecture-assets' | 'part' | 'sub-part' | 'asset';
+
+type SelectedNode = {
+    id: string;
+    type: SelectedNodeType;
+    title: string;
+    location?: string;
+};
+
+const selectedNodeLabels: Record<SelectedNodeType, string> = {
+    lecture: 'Lecture',
+    'lecture-assets': 'Folder',
+    part: 'Part',
+    'sub-part': 'Sub-part',
+    asset: 'Asset',
+};
+
+function findPartSelection(parts: Part[], nodeId: string, path: string[] = []): SelectedNode | null {
+    for (const part of parts) {
+        const nextPath = [...path, part.title];
+        const partType: SelectedNodeType = path.length === 0 ? 'part' : 'sub-part';
+
+        if (part.id === nodeId) {
+            return {
+                id: part.id,
+                type: partType,
+                title: part.title,
+                location: path.length > 0 ? path.join(' / ') : undefined,
+            };
+        }
+
+        const asset = part.assets?.find((item) => item.id === nodeId);
+        if (asset) {
+            return {
+                id: asset.id,
+                type: 'asset',
+                title: asset.title,
+                location: nextPath.join(' / '),
+            };
+        }
+
+        const nestedSelection = findPartSelection(part.subParts || [], nodeId, nextPath);
+        if (nestedSelection) return nestedSelection;
+    }
+
+    return null;
+}
+
+function findSelectedNodeInLectures(lectures: Lecture[], nodeId: string): SelectedNode | null {
+    for (const lecture of lectures) {
+        if (lecture.id === nodeId) {
+            return { id: lecture.id, type: 'lecture', title: lecture.title };
+        }
+
+        if (nodeId === `lecture-assets:${lecture.id}`) {
+            return {
+                id: nodeId,
+                type: 'lecture-assets',
+                title: 'Lecture Assets',
+                location: lecture.title,
+            };
+        }
+
+        const lectureAsset = lecture.assets?.find((asset) => asset.id === nodeId);
+        if (lectureAsset) {
+            return {
+                id: lectureAsset.id,
+                type: 'asset',
+                title: lectureAsset.title,
+                location: `${lecture.title} / Lecture Assets`,
+            };
+        }
+
+        const partSelection = findPartSelection(lecture.parts || [], nodeId);
+        if (partSelection) {
+            return {
+                ...partSelection,
+                location: partSelection.location ? `${lecture.title} / ${partSelection.location}` : lecture.title,
+            };
+        }
+    }
+
+    return null;
+}
+
 // ─── Rename Dialog ────────────────────────────────────────────────────────────
 
 function RenameDialog({
@@ -182,15 +267,32 @@ function MovePartDialog({
     );
 }
 
-function AssetNode({ asset, level = 0 }: { asset: PartAsset; level?: number }) {
+function AssetNode({
+    asset,
+    level = 0,
+    selectedNode,
+    onSelect,
+    location,
+}: {
+    asset: PartAsset;
+    level?: number;
+    selectedNode: SelectedNode | null;
+    onSelect: (node: SelectedNode) => void;
+    location?: string;
+}) {
     const icon = asset.type === 'VIDEO'
         ? <Video className="h-3.5 w-3.5 text-purple-500" />
         : <FileText className="h-3.5 w-3.5 text-blue-500" />;
+    const isSelected = selectedNode?.id === asset.id;
 
     return (
         <div
-            className="mt-1 flex items-center gap-2 rounded-md border border-dashed bg-background/70 px-3 py-2 text-sm shadow-sm"
+            className={`mt-1 flex cursor-pointer items-center gap-2 rounded-md border border-dashed px-3 py-2 text-sm shadow-sm transition-colors ${isSelected
+                ? 'border-primary bg-primary/10 ring-1 ring-primary/30'
+                : 'bg-background/70 hover:bg-muted/70'
+                }`}
             style={{ marginLeft: `${12 + level * 24}px` }}
+            onClick={() => onSelect({ id: asset.id, type: 'asset', title: asset.title, location })}
         >
             <div className="shrink-0">{icon}</div>
             <span className="truncate font-medium">{asset.title}</span>
@@ -203,26 +305,46 @@ function NestedPartNode({
     part,
     courseId,
     level = 0,
+    selectedNode,
+    onSelect,
+    parentPath = [],
 }: {
     part: Part;
     courseId: string;
     level?: number;
+    selectedNode: SelectedNode | null;
+    onSelect: (node: SelectedNode) => void;
+    parentPath?: string[];
 }) {
     const router = useRouter();
     const [expanded, setExpanded] = useState(false);
+    const isSelected = selectedNode?.id === part.id;
+    const partPath = [...parentPath, part.title];
 
     return (
         <div className="mt-1">
             <div
-                className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2 transition-colors hover:bg-muted"
+                className={`flex items-center justify-between rounded-md border px-3 py-2 transition-colors ${isSelected
+                    ? 'border-primary bg-primary/10 ring-1 ring-primary/20'
+                    : 'bg-muted/30 hover:bg-muted'
+                    }`}
                 style={{ marginLeft: `${48 + level * 24}px` }}
+                onClick={() => onSelect({
+                    id: part.id,
+                    type: 'sub-part',
+                    title: part.title,
+                    location: parentPath.join(' / ') || undefined,
+                })}
             >
                 <div className="flex min-w-0 flex-1 items-center gap-2">
                     <Button
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7 shrink-0"
-                        onClick={() => setExpanded((value) => !value)}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setExpanded((value) => !value);
+                        }}
                     >
                         {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                     </Button>
@@ -232,7 +354,14 @@ function NestedPartNode({
                         <div className="text-xs text-muted-foreground">{part.assets?.length || 0} assets</div>
                     </div>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${part.id}`)}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        router.push(`/admin/courses/${courseId}/curriculum/${part.id}`);
+                    }}
+                >
                     <ArrowRight className="h-4 w-4 text-muted-foreground" />
                 </Button>
             </div>
@@ -243,11 +372,26 @@ function NestedPartNode({
                     style={{ marginLeft: `${64 + level * 24}px` }}
                 >
                     {part.assets?.map((asset) => (
-                        <AssetNode key={asset.id} asset={asset} level={level + 1} />
+                        <AssetNode
+                            key={asset.id}
+                            asset={asset}
+                            level={level + 1}
+                            selectedNode={selectedNode}
+                            onSelect={onSelect}
+                            location={partPath.join(' / ')}
+                        />
                     ))}
 
                     {part.subParts?.map((subPart) => (
-                        <NestedPartNode key={subPart.id} part={subPart} courseId={courseId} level={level + 1} />
+                        <NestedPartNode
+                            key={subPart.id}
+                            part={subPart}
+                            courseId={courseId}
+                            level={level + 1}
+                            selectedNode={selectedNode}
+                            onSelect={onSelect}
+                            parentPath={partPath}
+                        />
                     ))}
                 </div>
             )}
@@ -258,19 +402,37 @@ function NestedPartNode({
 function LectureAssetFolder({
     lecture,
     onOpen,
+    selectedNode,
+    onSelect,
 }: {
     lecture: Lecture;
     onOpen: (lecture: Lecture) => Promise<void>;
+    selectedNode: SelectedNode | null;
+    onSelect: (node: SelectedNode) => void;
 }) {
     const [expanded, setExpanded] = useState(true);
+    const folderId = `lecture-assets:${lecture.id}`;
+    const isSelected = selectedNode?.id === folderId;
 
     return (
         <div className="mt-1">
             <div
-                className="ml-6 flex items-center justify-between rounded-md border bg-amber-50/40 px-3 py-2 transition-colors hover:bg-amber-100/50 dark:bg-amber-950/20 dark:hover:bg-amber-950/30"
+                className={`ml-6 flex items-center justify-between rounded-md border px-3 py-2 transition-colors ${isSelected
+                    ? 'border-primary bg-primary/10 ring-1 ring-primary/20'
+                    : 'bg-amber-50/40 hover:bg-amber-100/50 dark:bg-amber-950/20 dark:hover:bg-amber-950/30'
+                    }`}
+                onClick={() => onSelect({ id: folderId, type: 'lecture-assets', title: 'Lecture Assets', location: lecture.title })}
             >
                 <div className="flex min-w-0 flex-1 items-center gap-2">
-                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setExpanded((value) => !value)}>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setExpanded((value) => !value);
+                        }}
+                    >
                         {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                     </Button>
                     <FolderOpen className="h-4 w-4 shrink-0 text-amber-500" />
@@ -279,7 +441,14 @@ function LectureAssetFolder({
                         <div className="text-xs text-muted-foreground">{lecture.assets?.length || 0} assets</div>
                     </div>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => void onOpen(lecture)}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        void onOpen(lecture);
+                    }}
+                >
                     <ArrowRight className="h-4 w-4 text-muted-foreground" />
                 </Button>
             </div>
@@ -287,7 +456,14 @@ function LectureAssetFolder({
             {expanded && (
                 <div className="ml-12 mt-1 border-l border-dashed border-amber-500/40 pl-3">
                     {lecture.assets?.map((asset) => (
-                        <AssetNode key={asset.id} asset={asset} level={1} />
+                        <AssetNode
+                            key={asset.id}
+                            asset={asset}
+                            level={1}
+                            selectedNode={selectedNode}
+                            onSelect={onSelect}
+                            location={`${lecture.title} / Lecture Assets`}
+                        />
                     ))}
                 </div>
             )}
@@ -301,6 +477,8 @@ function SortableLecture({
     lecture,
     lectures,
     courseId,
+    selectedNode,
+    onSelect,
     onDelete,
     onOpenLectureAssets,
     onAddPart,
@@ -316,6 +494,8 @@ function SortableLecture({
     lecture: Lecture;
     lectures: Lecture[];
     courseId: string;
+    selectedNode: SelectedNode | null;
+    onSelect: (node: SelectedNode) => void;
     onDelete: (id: string) => void;
     onOpenLectureAssets: (lecture: Lecture) => Promise<void>;
     onAddPart: (lectureId: string) => void;
@@ -342,8 +522,17 @@ function SortableLecture({
 
     return (
         <div ref={setNodeRef} style={style}>
-            <AccordionItem value={lecture.id} className="border rounded-lg bg-card px-4">
-                <div className="flex items-center justify-between py-2">
+            <AccordionItem
+                value={lecture.id}
+                className={`border rounded-lg bg-card px-4 transition-colors ${selectedNode?.id === lecture.id
+                    ? 'border-primary bg-primary/5 shadow-sm'
+                    : ''
+                    }`}
+            >
+                <div
+                    className="flex items-center justify-between py-2"
+                    onClick={() => onSelect({ id: lecture.id, type: 'lecture', title: lecture.title })}
+                >
                     <div className="flex items-center gap-1 flex-1">
                         {/* Drag handle — hidden on mobile */}
                         <div
@@ -384,18 +573,32 @@ function SortableLecture({
                         <Button variant="ghost" size="sm" onClick={e => { e.stopPropagation(); setRenameOpen(true); }}>
                             <Pencil className="h-4 w-4 text-muted-foreground" />
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => onDelete(lecture.id)}>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onDelete(lecture.id);
+                            }}
+                        >
                             <Trash className="h-4 w-4 text-destructive" />
                         </Button>
                     </div>
                 </div>
 
                 <AccordionContent className="pt-2 pb-4 space-y-2">
-                    <LectureAssetFolder lecture={lecture} onOpen={onOpenLectureAssets} />
+                    <LectureAssetFolder
+                        lecture={lecture}
+                        onOpen={onOpenLectureAssets}
+                        selectedNode={selectedNode}
+                        onSelect={onSelect}
+                    />
                     <SortablePartsList
                         lecture={lecture}
                         lectures={lectures}
                         courseId={courseId}
+                        selectedNode={selectedNode}
+                        onSelect={onSelect}
                         onAddSubPart={onAddSubPart}
                         onRenamePart={onRename}
                         onDeletePart={onDeletePart}
@@ -429,6 +632,8 @@ function SortablePartsList({
     lecture,
     lectures,
     courseId,
+    selectedNode,
+    onSelect,
     onAddSubPart,
     onRenamePart,
     onDeletePart,
@@ -437,6 +642,8 @@ function SortablePartsList({
     lecture: Lecture;
     lectures: Lecture[];
     courseId: string;
+    selectedNode: SelectedNode | null;
+    onSelect: (node: SelectedNode) => void;
     onAddSubPart: (parentPartId: string, lectureId: string) => void;
     onRenamePart: (id: string, title: string) => Promise<void>;
     onDeletePart: (partId: string) => Promise<void>;
@@ -495,6 +702,8 @@ function SortablePartsList({
                         lectureId={lecture.id}
                         lectures={lectures}
                         courseId={courseId}
+                        selectedNode={selectedNode}
+                        onSelect={onSelect}
                         onAddSubPart={onAddSubPart}
                         onRename={onRenamePart}
                         onDelete={onDeletePart}
@@ -520,6 +729,8 @@ function SortablePart({
     lectureId,
     lectures,
     courseId,
+    selectedNode,
+    onSelect,
     onAddSubPart,
     onRename,
     onDelete,
@@ -534,6 +745,8 @@ function SortablePart({
     lectureId: string;
     lectures: Lecture[];
     courseId: string;
+    selectedNode: SelectedNode | null;
+    onSelect: (node: SelectedNode) => void;
     onAddSubPart: (parentPartId: string, lectureId: string) => void;
     onRename: (id: string, title: string) => Promise<void>;
     onDelete: (partId: string) => Promise<void>;
@@ -550,6 +763,7 @@ function SortablePart({
     const [subRenameId, setSubRenameId] = useState<string | null>(null);
     const [subRenameTitle, setSubRenameTitle] = useState('');
     const [expanded, setExpanded] = useState(false);
+    const isSelected = selectedNode?.id === part.id;
 
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: part.id });
 
@@ -564,7 +778,13 @@ function SortablePart({
 
     return (
         <div ref={setNodeRef} style={style}>
-            <div className="flex items-center gap-1 rounded-md border bg-muted/30 px-3 py-2 ml-6 transition-colors group hover:bg-muted">
+            <div
+                className={`flex items-center gap-1 rounded-md border px-3 py-2 ml-6 transition-colors group ${isSelected
+                    ? 'border-primary bg-primary/10 ring-1 ring-primary/20'
+                    : 'bg-muted/30 hover:bg-muted'
+                    }`}
+                onClick={() => onSelect({ id: part.id, type: 'part', title: part.title })}
+            >
                 {/* Drag handle — hidden on mobile */}
                 <div
                     {...attributes}
@@ -577,10 +797,28 @@ function SortablePart({
 
                 {/* Up/Down buttons */}
                 <div className="flex flex-col gap-0.5 shrink-0">
-                    <Button variant="ghost" size="icon" className="h-5 w-5" disabled={isFirst} onClick={onMoveUp}>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5"
+                        disabled={isFirst}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onMoveUp();
+                        }}
+                    >
                         <ChevronUp className="h-3 w-3" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-5 w-5" disabled={isLast} onClick={onMoveDown}>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5"
+                        disabled={isLast}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onMoveDown();
+                        }}
+                    >
                         <ChevronDown className="h-3 w-3" />
                     </Button>
                 </div>
@@ -590,7 +828,10 @@ function SortablePart({
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7 shrink-0"
-                        onClick={() => setExpanded((value) => !value)}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setExpanded((value) => !value);
+                        }}
                     >
                         {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                     </Button>
@@ -622,7 +863,14 @@ function SortablePart({
                     >
                         <Trash className="h-4 w-4 text-destructive" />
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${part.id}`)}>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/admin/courses/${courseId}/curriculum/${part.id}`);
+                        }}
+                    >
                         <ArrowRight className="h-4 w-4 text-muted-foreground" />
                     </Button>
                 </div>
@@ -631,37 +879,72 @@ function SortablePart({
             {expanded && (
                 <div className="ml-12 mt-1 border-l border-dashed border-muted-foreground/30 pl-3">
                     {part.assets?.map((asset) => (
-                        <AssetNode key={asset.id} asset={asset} />
+                        <AssetNode
+                            key={asset.id}
+                            asset={asset}
+                            selectedNode={selectedNode}
+                            onSelect={onSelect}
+                            location={part.title}
+                        />
                     ))}
 
                     {part.subParts?.map(sub => (
                         <div key={sub.id}>
-                            <div className="mt-1 flex items-center justify-between rounded-md border bg-muted/20 px-2 py-2 transition-colors hover:bg-muted">
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                            <FolderOpen className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                            <span className="text-sm truncate">{sub.title}</span>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                            <Button
-                                variant="ghost" size="icon"
-                                className="h-6 w-6"
-                                onClick={e => { e.stopPropagation(); setSubRenameId(sub.id); setSubRenameTitle(sub.title); }}
+                            <div
+                                className={`mt-1 flex items-center justify-between rounded-md border px-2 py-2 transition-colors ${selectedNode?.id === sub.id
+                                    ? 'border-primary bg-primary/10 ring-1 ring-primary/20'
+                                    : 'bg-muted/20 hover:bg-muted'
+                                    }`}
+                                onClick={() => onSelect({ id: sub.id, type: 'sub-part', title: sub.title, location: part.title })}
                             >
-                                <Pencil className="h-3 w-3 text-muted-foreground" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${sub.id}`)}>
-                                <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                            </Button>
-                        </div>
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    <FolderOpen className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                                    <span className="text-sm truncate">{sub.title}</span>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                    <Button
+                                        variant="ghost" size="icon"
+                                        className="h-6 w-6"
+                                        onClick={e => { e.stopPropagation(); setSubRenameId(sub.id); setSubRenameTitle(sub.title); }}
+                                    >
+                                        <Pencil className="h-3 w-3 text-muted-foreground" />
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            router.push(`/admin/courses/${courseId}/curriculum/${sub.id}`);
+                                        }}
+                                    >
+                                        <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                                    </Button>
+                                </div>
                             </div>
 
                             <div className="ml-8 mt-1 border-l border-dashed border-muted-foreground/30 pl-3">
                                 {sub.assets?.map((asset) => (
-                                    <AssetNode key={asset.id} asset={asset} level={1} />
+                                    <AssetNode
+                                        key={asset.id}
+                                        asset={asset}
+                                        level={1}
+                                        selectedNode={selectedNode}
+                                        onSelect={onSelect}
+                                        location={`${part.title} / ${sub.title}`}
+                                    />
                                 ))}
 
                                 {sub.subParts?.map((nestedSubPart) => (
-                                    <NestedPartNode key={nestedSubPart.id} part={nestedSubPart} courseId={courseId} level={1} />
+                                    <NestedPartNode
+                                        key={nestedSubPart.id}
+                                        part={nestedSubPart}
+                                        courseId={courseId}
+                                        level={1}
+                                        selectedNode={selectedNode}
+                                        onSelect={onSelect}
+                                        parentPath={[part.title, sub.title]}
+                                    />
                                 ))}
                             </div>
                         </div>
@@ -678,6 +961,9 @@ function SortablePart({
                 onSave={async (newTitle) => {
                     await onRename(part.id, newTitle);
                     onLocalRename(part.id, newTitle);
+                    if (selectedNode?.id === part.id) {
+                        onSelect({ ...selectedNode, title: newTitle });
+                    }
                     toast.success('Part renamed ✓');
                 }}
             />
@@ -702,6 +988,9 @@ function SortablePart({
                 onSave={async (newTitle) => {
                     if (!subRenameId) return;
                     await onRename(subRenameId, newTitle);
+                    if (selectedNode?.id === subRenameId) {
+                        onSelect({ ...selectedNode, title: newTitle });
+                    }
                     toast.success('Sub-part renamed ✓');
                 }}
             />
@@ -720,6 +1009,7 @@ export default function CurriculumPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [newLectureTitle, setNewLectureTitle] = useState('');
     const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const [selectedNode, setSelectedNode] = useState<SelectedNode | null>(null);
 
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -742,6 +1032,13 @@ export default function CurriculumPage() {
     useEffect(() => {
         fetchContent();
     }, [fetchContent]);
+
+    useEffect(() => {
+        setSelectedNode((current) => {
+            if (!current) return current;
+            return findSelectedNodeInLectures(lectures, current.id);
+        });
+    }, [lectures]);
 
     // ── Rename: works for lectures, parts, and sub-parts ─────────────────────
     const handleRename = useCallback(async (id: string, newTitle: string) => {
@@ -924,6 +1221,23 @@ export default function CurriculumPage() {
                 </Dialog>
             </div>
 
+            {selectedNode && (
+                <div className="rounded-xl border bg-muted/30 px-4 py-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                        Selected item
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                        <span className="rounded-full border bg-background px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                            {selectedNodeLabels[selectedNode.type]}
+                        </span>
+                        <span className="truncate text-sm font-semibold">{selectedNode.title}</span>
+                    </div>
+                    {selectedNode.location && (
+                        <div className="mt-1 truncate text-xs text-muted-foreground">{selectedNode.location}</div>
+                    )}
+                </div>
+            )}
+
             {isLoading ? (
                 <div className="flex justify-center py-10"><Loader2 className="animate-spin" /></div>
             ) : (
@@ -936,6 +1250,8 @@ export default function CurriculumPage() {
                                     lecture={lecture}
                                     lectures={lectures}
                                     courseId={courseId}
+                                    selectedNode={selectedNode}
+                                    onSelect={setSelectedNode}
                                     onDelete={handleDeleteLecture}
                                     onOpenLectureAssets={handleOpenLectureAssets}
                                     onAddPart={handleQuickAddPart}
