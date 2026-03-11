@@ -4,12 +4,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { instructorApi, type Lecture, type Part, type PartAsset } from '@/lib/api/instructor';
 import { toast } from 'sonner';
-import { Loader2, Plus, GripVertical, FileText, Trash, ArrowRight, ArrowRightLeft, Video, Pencil, ChevronUp, ChevronDown, FolderOpen } from 'lucide-react';
+import { Loader2, Plus, GripVertical, FileText, Trash, ArrowRight, ArrowRightLeft, Video, Pencil, ChevronUp, ChevronDown, ChevronRight, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { useTranslations } from 'next-intl';
 import {
     DndContext,
@@ -109,7 +109,7 @@ function MovePartDialog({
     useEffect(() => {
         if (!open) return;
         setTargetLectureId(availableLectures[0]?.id || '');
-    }, [open, availableLectures]);
+    }, [open, currentLectureId, lectures]);
 
     const handleMove = async () => {
         if (!targetLectureId) return;
@@ -124,26 +124,51 @@ function MovePartDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
+            <DialogContent className="max-w-3xl">
                 <DialogHeader>
                     <DialogTitle>Move Part</DialogTitle>
                 </DialogHeader>
-                <div className="space-y-2 py-4">
-                    <div className="text-sm font-medium">Target lecture</div>
-                    <Select value={targetLectureId} onValueChange={setTargetLectureId} disabled={availableLectures.length === 0}>
-                        <SelectTrigger>
-                            <SelectValue placeholder="Select lecture" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {availableLectures.map((lecture) => (
-                                <SelectItem key={lecture.id} value={lecture.id}>
-                                    {lecture.title}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                    {availableLectures.length === 0 && (
+                <div className="py-4">
+                    {availableLectures.length === 0 ? (
                         <p className="text-sm text-muted-foreground">No other lectures available in this course.</p>
+                    ) : (
+                        <div className="grid gap-4 md:grid-cols-[220px_1fr]">
+                            <div className="rounded-lg border">
+                                <div className="border-b px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                    Target lecture
+                                </div>
+                                <ScrollArea className="h-72">
+                                    <div className="p-2">
+                                        {availableLectures.map((lecture) => {
+                                            const isActive = targetLectureId === lecture.id;
+                                            return (
+                                                <button
+                                                    key={lecture.id}
+                                                    type="button"
+                                                    onClick={() => setTargetLectureId(lecture.id)}
+                                                    className={`mb-2 w-full rounded-md border px-3 py-2 text-left transition-colors ${isActive
+                                                        ? 'border-primary bg-primary/10 text-foreground'
+                                                        : 'border-transparent hover:bg-muted'
+                                                        }`}
+                                                >
+                                                    <div className="truncate text-sm font-medium">{lecture.title}</div>
+                                                    <div className="text-xs text-muted-foreground">{lecture.parts.length} parts</div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </ScrollArea>
+                            </div>
+
+                            <div className="rounded-lg border bg-muted/20 p-4">
+                                <div className="mb-2 text-sm font-medium">
+                                    {availableLectures.find((lecture) => lecture.id === targetLectureId)?.title || 'Select lecture'}
+                                </div>
+                                <div className="text-sm text-muted-foreground">
+                                    Move this part directly into the selected lecture.
+                                </div>
+                            </div>
+                        </div>
                     )}
                 </div>
                 <DialogFooter>
@@ -184,6 +209,7 @@ function NestedPartNode({
     level?: number;
 }) {
     const router = useRouter();
+    const [expanded, setExpanded] = useState(false);
 
     return (
         <div className="mt-1">
@@ -191,27 +217,31 @@ function NestedPartNode({
                 className="flex items-center justify-between rounded-md bg-muted/20 px-3 py-2 transition-colors hover:bg-muted"
                 style={{ marginLeft: `${48 + level * 24}px` }}
             >
-                <div
-                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-2"
-                    onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${part.id}`)}
-                >
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => setExpanded((value) => !value)}
+                    >
+                        {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </Button>
                     <FolderOpen className="h-4 w-4 shrink-0 text-amber-500" />
                     <div className="min-w-0">
                         <div className="truncate text-sm font-medium">{part.title}</div>
                         <div className="text-xs text-muted-foreground">{part.assets?.length || 0} assets</div>
                     </div>
                 </div>
-                <ArrowRight
-                    className="h-4 w-4 shrink-0 cursor-pointer text-muted-foreground"
-                    onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${part.id}`)}
-                />
+                <Button variant="ghost" size="sm" onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${part.id}`)}>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                </Button>
             </div>
 
-            {part.assets?.map((asset) => (
+            {expanded && part.assets?.map((asset) => (
                 <AssetNode key={asset.id} asset={asset} level={level + 1} />
             ))}
 
-            {part.subParts?.map((subPart) => (
+            {expanded && part.subParts?.map((subPart) => (
                 <NestedPartNode key={subPart.id} part={subPart} courseId={courseId} level={level + 1} />
             ))}
         </div>
@@ -225,28 +255,29 @@ function LectureAssetFolder({
     lecture: Lecture;
     onOpen: (lecture: Lecture) => Promise<void>;
 }) {
+    const [expanded, setExpanded] = useState(true);
+
     return (
         <div className="mt-1">
             <div
                 className="ml-6 flex items-center justify-between rounded-md border bg-amber-50/40 px-3 py-2 transition-colors hover:bg-amber-100/50 dark:bg-amber-950/20 dark:hover:bg-amber-950/30"
             >
-                <div
-                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-2"
-                    onClick={() => void onOpen(lecture)}
-                >
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setExpanded((value) => !value)}>
+                        {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </Button>
                     <FolderOpen className="h-4 w-4 shrink-0 text-amber-500" />
                     <div className="min-w-0">
                         <div className="truncate text-sm font-medium">Lecture Assets</div>
                         <div className="text-xs text-muted-foreground">{lecture.assets?.length || 0} assets</div>
                     </div>
                 </div>
-                <ArrowRight
-                    className="h-4 w-4 shrink-0 cursor-pointer text-muted-foreground"
-                    onClick={() => void onOpen(lecture)}
-                />
+                <Button variant="ghost" size="sm" onClick={() => void onOpen(lecture)}>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                </Button>
             </div>
 
-            {lecture.assets?.map((asset) => (
+            {expanded && lecture.assets?.map((asset) => (
                 <AssetNode key={asset.id} asset={asset} level={1} />
             ))}
         </div>
@@ -507,6 +538,7 @@ function SortablePart({
     const [moveOpen, setMoveOpen] = useState(false);
     const [subRenameId, setSubRenameId] = useState<string | null>(null);
     const [subRenameTitle, setSubRenameTitle] = useState('');
+    const [expanded, setExpanded] = useState(false);
 
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: part.id });
 
@@ -542,10 +574,15 @@ function SortablePart({
                     </Button>
                 </div>
 
-                <div
-                    className="flex items-center gap-3 flex-1 cursor-pointer min-w-0"
-                    onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${part.id}`)}
-                >
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => setExpanded((value) => !value)}
+                    >
+                        {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </Button>
                     <div className="p-2 bg-background rounded-full border shrink-0">
                         {isVideo ? <Video className="h-4 w-4 text-purple-500" /> :
                             isPdf ? <FileText className="h-4 w-4 text-blue-500" /> :
@@ -580,17 +617,14 @@ function SortablePart({
                 </div>
             </div>
 
-            {part.assets?.map((asset) => (
+            {expanded && part.assets?.map((asset) => (
                 <AssetNode key={asset.id} asset={asset} />
             ))}
 
-            {part.subParts?.map(sub => (
+            {expanded && part.subParts?.map(sub => (
                 <div key={sub.id}>
                     <div className="flex items-center justify-between p-2 rounded-md bg-muted/20 hover:bg-muted ml-12 mt-1">
-                        <div
-                            className="flex items-center gap-2 flex-1 cursor-pointer min-w-0"
-                            onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${sub.id}`)}
-                        >
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
                             <FolderOpen className="h-3.5 w-3.5 text-amber-500 shrink-0" />
                             <span className="text-sm truncate">{sub.title}</span>
                         </div>
@@ -602,10 +636,9 @@ function SortablePart({
                             >
                                 <Pencil className="h-3 w-3 text-muted-foreground" />
                             </Button>
-                            <ArrowRight
-                                className="h-3 w-3 text-muted-foreground cursor-pointer"
-                                onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${sub.id}`)}
-                            />
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${sub.id}`)}>
+                                <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                            </Button>
                         </div>
                     </div>
 

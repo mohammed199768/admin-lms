@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { instructorApi, type Lecture, type Part, type PartAsset } from '@/lib/api/instructor';
 import { toast } from 'sonner';
-import { Loader2, ChevronLeft, Video, FileText, Trash, Plus, ArrowRight, ArrowRightLeft, FolderUp, Pencil, GripVertical, ChevronUp, ChevronDown, Eye } from 'lucide-react';
+import { Loader2, ChevronLeft, Video, FileText, Trash, Plus, ArrowRight, ArrowRightLeft, FolderUp, Pencil, GripVertical, ChevronUp, ChevronDown, ChevronRight, Eye } from 'lucide-react';
 import {
     DndContext,
     closestCenter,
@@ -32,7 +32,7 @@ import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { DocumentViewer } from '@/components/common/document-viewer';
 import { useTranslations } from 'next-intl';
 
@@ -179,7 +179,7 @@ function MoveAssetDialog({
 
         setTargetLectureId(firstLectureId);
         setTargetPartId(firstPartId);
-    }, [open, lectureOptions, partOptions]);
+    }, [open, currentPartId, lectures]);
 
     useEffect(() => {
         if (!open) return;
@@ -202,45 +202,73 @@ function MoveAssetDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
+            <DialogContent className="max-w-4xl">
                 <DialogHeader>
                     <DialogTitle>Move Asset</DialogTitle>
                 </DialogHeader>
-                <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                        <div className="text-sm font-medium">Target lecture</div>
-                        <Select value={targetLectureId} onValueChange={setTargetLectureId} disabled={lectureOptions.length === 0}>
-                            <SelectTrigger>
-                                <SelectValue placeholder="Select lecture" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {lectureOptions.map((lecture) => (
-                                    <SelectItem key={lecture.id} value={lecture.id}>
-                                        {lecture.title}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                        <div className="text-sm font-medium">Target part</div>
-                        <Select value={targetPartId} onValueChange={setTargetPartId} disabled={filteredPartOptions.length === 0}>
-                            <SelectTrigger>
-                                <SelectValue placeholder="Select part" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {filteredPartOptions.map((partOption) => (
-                                    <SelectItem key={partOption.id} value={partOption.id}>
-                                        {partOption.label}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-
-                    {partOptions.length === 0 && (
+                <div className="py-4">
+                    {partOptions.length === 0 ? (
                         <p className="text-sm text-muted-foreground">No other parts available in this course.</p>
+                    ) : (
+                        <div className="grid gap-4 md:grid-cols-[220px_1fr]">
+                            <div className="rounded-lg border">
+                                <div className="border-b px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                    Target lecture
+                                </div>
+                                <ScrollArea className="h-72">
+                                    <div className="p-2">
+                                        {lectureOptions.map((lecture) => {
+                                            const isActive = targetLectureId === lecture.id;
+                                            return (
+                                                <button
+                                                    key={lecture.id}
+                                                    type="button"
+                                                    onClick={() => setTargetLectureId(lecture.id)}
+                                                    className={`mb-2 w-full rounded-md border px-3 py-2 text-left transition-colors ${isActive
+                                                        ? 'border-primary bg-primary/10 text-foreground'
+                                                        : 'border-transparent hover:bg-muted'
+                                                        }`}
+                                                >
+                                                    <div className="truncate text-sm font-medium">{lecture.title}</div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </ScrollArea>
+                            </div>
+
+                            <div className="rounded-lg border">
+                                <div className="border-b px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                    Target part
+                                </div>
+                                <ScrollArea className="h-72">
+                                    <div className="p-2">
+                                        {filteredPartOptions.map((partOption) => {
+                                            const isActive = targetPartId === partOption.id;
+                                            return (
+                                                <button
+                                                    key={partOption.id}
+                                                    type="button"
+                                                    onClick={() => setTargetPartId(partOption.id)}
+                                                    className={`mb-2 w-full rounded-md border px-3 py-2 text-left transition-colors ${isActive
+                                                        ? 'border-primary bg-primary/10 text-foreground'
+                                                        : 'border-transparent hover:bg-muted'
+                                                        }`}
+                                                >
+                                                    <div className="truncate text-sm font-medium">{partOption.label}</div>
+                                                    <div className="text-xs text-muted-foreground">{partOption.lectureTitle}</div>
+                                                </button>
+                                            );
+                                        })}
+                                        {filteredPartOptions.length === 0 && (
+                                            <div className="px-2 py-3 text-sm text-muted-foreground">
+                                                No parts in this lecture.
+                                            </div>
+                                        )}
+                                    </div>
+                                </ScrollArea>
+                            </div>
+                        </div>
                     )}
                 </div>
                 <DialogFooter>
