@@ -4,11 +4,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { instructorApi, type Lecture } from '@/lib/api/instructor';
 import { toast } from 'sonner';
-import { Loader2, Plus, GripVertical, FileText, Trash, ArrowRight, Video, Pencil, ChevronUp, ChevronDown } from 'lucide-react';
+import { Loader2, Plus, GripVertical, FileText, Trash, ArrowRight, ArrowRightLeft, Video, Pencil, ChevronUp, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useTranslations } from 'next-intl';
 import {
     DndContext,
@@ -87,26 +88,99 @@ function RenameDialog({
     );
 }
 
+function MovePartDialog({
+    open,
+    onOpenChange,
+    lectures,
+    currentLectureId,
+    onMove,
+}: {
+    open: boolean;
+    onOpenChange: (v: boolean) => void;
+    lectures: Lecture[];
+    currentLectureId: string;
+    onMove: (targetLectureId: string) => Promise<void>;
+}) {
+    const [targetLectureId, setTargetLectureId] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    const availableLectures = lectures.filter((lecture) => lecture.id !== currentLectureId);
+
+    useEffect(() => {
+        if (!open) return;
+        setTargetLectureId(availableLectures[0]?.id || '');
+    }, [open, availableLectures]);
+
+    const handleMove = async () => {
+        if (!targetLectureId) return;
+        setSaving(true);
+        try {
+            await onMove(targetLectureId);
+            onOpenChange(false);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Move Part</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-2 py-4">
+                    <div className="text-sm font-medium">Target lecture</div>
+                    <Select value={targetLectureId} onValueChange={setTargetLectureId} disabled={availableLectures.length === 0}>
+                        <SelectTrigger>
+                            <SelectValue placeholder="Select lecture" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {availableLectures.map((lecture) => (
+                                <SelectItem key={lecture.id} value={lecture.id}>
+                                    {lecture.title}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    {availableLectures.length === 0 && (
+                        <p className="text-sm text-muted-foreground">No other lectures available in this course.</p>
+                    )}
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                    <Button onClick={handleMove} disabled={saving || !targetLectureId}>
+                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Move'}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 // ─── Sortable Lecture Item ────────────────────────────────────────────────────
 
 function SortableLecture({
     lecture,
+    lectures,
     courseId,
     onDelete,
     onAddPart,
     onAddSubPart,
     onRename,
+    onMovePart,
     onMoveUp,
     onMoveDown,
     isFirst,
     isLast,
 }: {
     lecture: Lecture;
+    lectures: Lecture[];
     courseId: string;
     onDelete: (id: string) => void;
     onAddPart: (lectureId: string) => void;
     onAddSubPart: (parentPartId: string, lectureId: string) => void;
     onRename: (id: string, title: string) => Promise<void>;
+    onMovePart: (partId: string, targetLectureId: string) => Promise<void>;
     onMoveUp: () => void;
     onMoveDown: () => void;
     isFirst: boolean;
@@ -166,9 +240,11 @@ function SortableLecture({
                 <AccordionContent className="pt-2 pb-4 space-y-2">
                     <SortablePartsList
                         lecture={lecture}
+                        lectures={lectures}
                         courseId={courseId}
                         onAddSubPart={onAddSubPart}
                         onRenamePart={onRename}
+                        onMovePart={onMovePart}
                     />
                     <div className="flex gap-2 ml-6 mt-2">
                         <Button variant="outline" size="sm" className="flex-1 border-dashed" onClick={() => onAddPart(lecture.id)}>
@@ -196,14 +272,18 @@ function SortableLecture({
 
 function SortablePartsList({
     lecture,
+    lectures,
     courseId,
     onAddSubPart,
     onRenamePart,
+    onMovePart,
 }: {
     lecture: Lecture;
+    lectures: Lecture[];
     courseId: string;
     onAddSubPart: (parentPartId: string, lectureId: string) => void;
     onRenamePart: (id: string, title: string) => Promise<void>;
+    onMovePart: (partId: string, targetLectureId: string) => Promise<void>;
 }) {
     const [parts, setParts] = useState(lecture.parts || []);
 
@@ -256,9 +336,11 @@ function SortablePartsList({
                         key={part.id}
                         part={part}
                         lectureId={lecture.id}
+                        lectures={lectures}
                         courseId={courseId}
                         onAddSubPart={onAddSubPart}
                         onRename={onRenamePart}
+                        onMove={onMovePart}
                         onLocalRename={(id, newTitle) => {
                             setParts(prev => prev.map(p => p.id === id ? { ...p, title: newTitle } : p));
                         }}
@@ -278,9 +360,11 @@ function SortablePartsList({
 function SortablePart({
     part,
     lectureId,
+    lectures,
     courseId,
     onAddSubPart,
     onRename,
+    onMove,
     onLocalRename,
     onMoveUp,
     onMoveDown,
@@ -289,9 +373,11 @@ function SortablePart({
 }: {
     part: Lecture['parts'][0];
     lectureId: string;
+    lectures: Lecture[];
     courseId: string;
     onAddSubPart: (parentPartId: string, lectureId: string) => void;
     onRename: (id: string, title: string) => Promise<void>;
+    onMove: (partId: string, targetLectureId: string) => Promise<void>;
     onLocalRename: (id: string, title: string) => void;
     onMoveUp: () => void;
     onMoveDown: () => void;
@@ -300,6 +386,7 @@ function SortablePart({
 }) {
     const router = useRouter();
     const [renameOpen, setRenameOpen] = useState(false);
+    const [moveOpen, setMoveOpen] = useState(false);
     const [subRenameId, setSubRenameId] = useState<string | null>(null);
     const [subRenameTitle, setSubRenameTitle] = useState('');
 
@@ -356,6 +443,9 @@ function SortablePart({
                     <Button variant="ghost" size="sm" onClick={e => { e.stopPropagation(); setRenameOpen(true); }}>
                         <Pencil className="h-4 w-4 text-muted-foreground" />
                     </Button>
+                    <Button variant="ghost" size="sm" onClick={e => { e.stopPropagation(); setMoveOpen(true); }}>
+                        <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
+                    </Button>
                     <Button variant="ghost" size="sm" onClick={() => router.push(`/admin/courses/${courseId}/curriculum/${part.id}`)}>
                         <ArrowRight className="h-4 w-4 text-muted-foreground" />
                     </Button>
@@ -398,6 +488,17 @@ function SortablePart({
                     await onRename(part.id, newTitle);
                     onLocalRename(part.id, newTitle);
                     toast.success('Part renamed ✓');
+                }}
+            />
+
+            <MovePartDialog
+                open={moveOpen}
+                onOpenChange={setMoveOpen}
+                lectures={lectures}
+                currentLectureId={lectureId}
+                onMove={async (targetLectureId) => {
+                    await onMove(part.id, targetLectureId);
+                    toast.success('Part moved');
                 }}
             />
 
@@ -563,6 +664,33 @@ export default function CurriculumPage() {
         }
     };
 
+    const handleMovePart = useCallback(async (partId: string, targetLectureId: string) => {
+        const sourceLecture = lectures.find((lecture) => lecture.parts?.some((part) => part.id === partId));
+        const movingPart = sourceLecture?.parts?.find((part) => part.id === partId);
+        const targetLecture = lectures.find((lecture) => lecture.id === targetLectureId);
+
+        if (!movingPart || !targetLecture) {
+            toast.error('Target lecture not found');
+            return;
+        }
+
+        const nextOrder = targetLecture.parts.length > 0
+            ? Math.max(...targetLecture.parts.map((part) => part.order)) + 1
+            : 1;
+
+        try {
+            await instructorApi.updatePart(partId, {
+                title: movingPart.title,
+                order: nextOrder,
+                lectureId: targetLectureId
+            });
+            await fetchContent();
+        } catch {
+            toast.error('Failed to move part');
+            throw new Error('move-part-failed');
+        }
+    }, [fetchContent, lectures]);
+
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -601,11 +729,13 @@ export default function CurriculumPage() {
                                 <SortableLecture
                                     key={lecture.id}
                                     lecture={lecture}
+                                    lectures={lectures}
                                     courseId={courseId}
                                     onDelete={handleDeleteLecture}
                                     onAddPart={handleQuickAddPart}
                                     onAddSubPart={handleQuickAddSubPart}
                                     onRename={handleRename}
+                                    onMovePart={handleMovePart}
                                     onMoveUp={() => handleMoveLecture(index, 'up')}
                                     onMoveDown={() => handleMoveLecture(index, 'down')}
                                     isFirst={index === 0}

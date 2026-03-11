@@ -323,7 +323,10 @@ export const instructorApi = {
         return apiClient.post<Part>(`/instructor/lessons/${parentPartId}/sub-lessons`, data);
     },
 
-    updatePart: async (partId: string, data: { title: string; order: number }): Promise<Part> => {
+    updatePart: async (
+        partId: string,
+        data: { title?: string; order?: number; lectureId?: string }
+    ): Promise<Part> => {
         return apiClient.patch<Part>(`/instructor/lessons/${partId}`, data);
     },
 
@@ -335,7 +338,10 @@ export const instructorApi = {
         return apiClient.post<PartAsset>(`/instructor/lessons/${partId}/assets`, data);
     },
 
-    updateAsset: async (assetId: string, data: Partial<CreateAssetInput>): Promise<PartAsset> => {
+    updateAsset: async (
+        assetId: string,
+        data: Partial<CreateAssetInput> & { partId?: string }
+    ): Promise<PartAsset> => {
         return apiClient.patch<PartAsset>(`/instructor/assets/${assetId}`, data);
     },
 

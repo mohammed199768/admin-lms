@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { instructorApi, type Part, type PartAsset } from '@/lib/api/instructor';
+import { instructorApi, type Lecture, type Part, type PartAsset } from '@/lib/api/instructor';
 import { toast } from 'sonner';
-import { Loader2, ChevronLeft, Video, FileText, Trash, Plus, ArrowRight, FolderUp, Pencil, GripVertical, ChevronUp, ChevronDown } from 'lucide-react';
+import { Loader2, ChevronLeft, Video, FileText, Trash, Plus, ArrowRight, ArrowRightLeft, FolderUp, Pencil, GripVertical, ChevronUp, ChevronDown } from 'lucide-react';
 import {
     DndContext,
     closestCenter,
@@ -32,9 +32,62 @@ import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useTranslations } from 'next-intl';
 
 const MAX_DOCUMENT_SIZE = 100 * 1024 * 1024; // 100MB
+
+type PartOption = {
+    id: string;
+    lectureId: string;
+    lectureTitle: string;
+    label: string;
+};
+
+const collectPartOptions = (lectures: Lecture[]): PartOption[] => {
+    const options: PartOption[] = [];
+    const seen = new Set<string>();
+
+    const visit = (lecture: Lecture, currentPart: Lecture['parts'][0], parents: string[]) => {
+        if (seen.has(currentPart.id)) return;
+        seen.add(currentPart.id);
+
+        options.push({
+            id: currentPart.id,
+            lectureId: lecture.id,
+            lectureTitle: lecture.title,
+            label: [...parents, currentPart.title].join(' / ')
+        });
+
+        currentPart.subParts?.forEach((subPart) => visit(lecture, subPart, [...parents, currentPart.title]));
+    };
+
+    lectures.forEach((lecture) => {
+        lecture.parts?.forEach((currentPart) => visit(lecture, currentPart, []));
+    });
+
+    return options;
+};
+
+const findPartById = (lectures: Lecture[], partId: string): Part | null => {
+    const visit = (currentPart: Part): Part | null => {
+        if (currentPart.id === partId) return currentPart;
+        for (const subPart of currentPart.subParts || []) {
+            const found = visit(subPart);
+            if (found) return found;
+        }
+        return null;
+    };
+
+    for (const lecture of lectures) {
+        for (const currentPart of lecture.parts || []) {
+            const found = visit(currentPart);
+            if (found) return found;
+        }
+    }
+
+    return null;
+};
 
 // ─── Rename Dialog ────────────────────────────────────────────────────────────
 
@@ -94,25 +147,138 @@ function RenameDialog({
     );
 }
 
+function MoveAssetDialog({
+    open,
+    onOpenChange,
+    lectures,
+    currentPartId,
+    onMove,
+}: {
+    open: boolean;
+    onOpenChange: (v: boolean) => void;
+    lectures: Lecture[];
+    currentPartId: string;
+    onMove: (targetPartId: string) => Promise<void>;
+}) {
+    const [targetLectureId, setTargetLectureId] = useState('');
+    const [targetPartId, setTargetPartId] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    const partOptions = collectPartOptions(lectures).filter((option) => option.id !== currentPartId);
+    const lectureOptions = Array.from(
+        new Map(partOptions.map((option) => [option.lectureId, option.lectureTitle])).entries()
+    ).map(([id, title]) => ({ id, title }));
+    const filteredPartOptions = partOptions.filter((option) => option.lectureId === targetLectureId);
+
+    useEffect(() => {
+        if (!open) return;
+
+        const firstLectureId = lectureOptions[0]?.id || '';
+        const firstPartId = partOptions.find((option) => option.lectureId === firstLectureId)?.id || '';
+
+        setTargetLectureId(firstLectureId);
+        setTargetPartId(firstPartId);
+    }, [open, lectureOptions, partOptions]);
+
+    useEffect(() => {
+        if (!open) return;
+        const nextPartId = filteredPartOptions[0]?.id || '';
+        if (!filteredPartOptions.some((option) => option.id === targetPartId)) {
+            setTargetPartId(nextPartId);
+        }
+    }, [filteredPartOptions, open, targetPartId]);
+
+    const handleMove = async () => {
+        if (!targetPartId) return;
+        setSaving(true);
+        try {
+            await onMove(targetPartId);
+            onOpenChange(false);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Move Asset</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                        <div className="text-sm font-medium">Target lecture</div>
+                        <Select value={targetLectureId} onValueChange={setTargetLectureId} disabled={lectureOptions.length === 0}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select lecture" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {lectureOptions.map((lecture) => (
+                                    <SelectItem key={lecture.id} value={lecture.id}>
+                                        {lecture.title}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                        <div className="text-sm font-medium">Target part</div>
+                        <Select value={targetPartId} onValueChange={setTargetPartId} disabled={filteredPartOptions.length === 0}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select part" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {filteredPartOptions.map((partOption) => (
+                                    <SelectItem key={partOption.id} value={partOption.id}>
+                                        {partOption.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    {partOptions.length === 0 && (
+                        <p className="text-sm text-muted-foreground">No other parts available in this course.</p>
+                    )}
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                    <Button onClick={handleMove} disabled={saving || !targetPartId}>
+                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Move'}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 // ─── Sortable Asset ──────────────────────────────────────────────────────────
 
 function SortableAsset({
     asset,
+    lectures,
+    currentPartId,
     onDelete,
     onRename,
+    onMove,
     onMoveUp,
     onMoveDown,
     isFirst,
     isLast,
 }: {
     asset: import('@/lib/api/instructor').PartAsset;
+    lectures: Lecture[];
+    currentPartId: string;
     onDelete: (id: string) => void;
     onRename: (asset: { id: string; title: string }) => void;
+    onMove: (assetId: string, targetPartId: string) => Promise<void>;
     onMoveUp: () => void;
     onMoveDown: () => void;
     isFirst: boolean;
     isLast: boolean;
 }) {
+    const [moveOpen, setMoveOpen] = useState(false);
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: asset.id });
 
     const style = {
@@ -165,10 +331,25 @@ function SortableAsset({
                     <Pencil className="h-4 w-4 text-muted-foreground" />
                 </Button>
                 <Button variant="ghost" size="icon" className="h-8 w-8"
+                    onClick={() => setMoveOpen(true)}>
+                    <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8"
                     onClick={() => onDelete(asset.id)}>
                     <Trash className="h-4 w-4 text-destructive" />
                 </Button>
             </div>
+
+            <MoveAssetDialog
+                open={moveOpen}
+                onOpenChange={setMoveOpen}
+                lectures={lectures}
+                currentPartId={currentPartId}
+                onMove={async (targetPartId) => {
+                    await onMove(asset.id, targetPartId);
+                    toast.success('Asset moved');
+                }}
+            />
         </div>
     );
 }
@@ -177,12 +358,18 @@ function SortableAsset({
 
 function SortableAssetList({
     assets: initialAssets,
+    lectures,
+    currentPartId,
     onDelete,
     onRename,
+    onMove,
 }: {
     assets: import('@/lib/api/instructor').PartAsset[];
+    lectures: Lecture[];
+    currentPartId: string;
     onDelete: (id: string) => void;
     onRename: (asset: { id: string; title: string }) => void;
+    onMove: (assetId: string, targetPartId: string) => Promise<void>;
 }) {
     const [assets, setAssets] = useState(initialAssets);
 
@@ -238,8 +425,11 @@ function SortableAssetList({
                         <SortableAsset
                             key={asset.id}
                             asset={asset}
+                            lectures={lectures}
+                            currentPartId={currentPartId}
                             onDelete={onDelete}
                             onRename={onRename}
+                            onMove={onMove}
                             onMoveUp={() => handleMove(index, 'up')}
                             onMoveDown={() => handleMove(index, 'down')}
                             isFirst={index === 0}
@@ -262,6 +452,7 @@ export default function PartEditorPage() {
     const courseId = params.courseId as string;
 
     const [part, setPart] = useState<Part | null>(null);
+    const [courseLectures, setCourseLectures] = useState<Lecture[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [title, setTitle] = useState('');
 
@@ -296,6 +487,19 @@ export default function PartEditorPage() {
     useEffect(() => {
         fetchPart();
     }, [fetchPart]);
+
+    const fetchCourseContent = useCallback(async () => {
+        try {
+            const data = await instructorApi.getCourseContent(courseId);
+            setCourseLectures(data.lectures || []);
+        } catch {
+            toast.error('Failed to load course content');
+        }
+    }, [courseId]);
+
+    useEffect(() => {
+        fetchCourseContent();
+    }, [fetchCourseContent]);
 
     const handleSaveTitle = async () => {
         try {
@@ -597,6 +801,32 @@ export default function PartEditorPage() {
         }
     };
 
+    const handleMoveAsset = async (assetId: string, targetPartId: string) => {
+        const asset = part?.assets.find((item) => item.id === assetId);
+        const targetPart = findPartById(courseLectures, targetPartId);
+
+        if (!asset || !targetPart) {
+            toast.error('Target part not found');
+            throw new Error('move-asset-failed');
+        }
+
+        const nextOrder = targetPart.assets.length > 0
+            ? Math.max(...targetPart.assets.map((item) => item.order)) + 1
+            : 1;
+
+        try {
+            await instructorApi.updateAsset(assetId, {
+                title: asset.title,
+                order: nextOrder,
+                partId: targetPartId
+            });
+            await Promise.all([fetchPart(), fetchCourseContent()]);
+        } catch {
+            toast.error('Failed to move asset');
+            throw new Error('move-asset-failed');
+        }
+    };
+
     const handleCreateSubPart = async () => {
         const subTitle = prompt('Sub-part title:');
         if (!subTitle) return;
@@ -820,8 +1050,11 @@ export default function PartEditorPage() {
                     {(part.assets?.length ?? 0) > 0 ? (
                         <SortableAssetList
                             assets={part.assets}
+                            lectures={courseLectures}
+                            currentPartId={partId}
                             onDelete={handleDeleteAsset}
                             onRename={setRenameAsset}
+                            onMove={handleMoveAsset}
                         />
                     ) : (
                         <p className="text-muted-foreground text-center py-4">No media assets uploaded.</p>
